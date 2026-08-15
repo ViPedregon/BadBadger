@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: badbadger
+Version: 0.1.0
+Summary: A dialogue-based game with NPC agents and a game master engine
+Requires-Python: >=3.11
