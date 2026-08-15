@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "badbadger"
+version = "0.1.0"
+description = "A dialogue-based game with NPC agents and a game master engine"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+badbadger = "badbadger.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
