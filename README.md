@@ -11,6 +11,7 @@ The current slice includes:
 
 - persistent locations, characters, facts, and character-scoped beliefs;
 - deterministic movement, examination, and waiting;
+- persistent NPC dialogue with character-scoped context and beliefs;
 - integer mission time and scheduled event processing;
 - an append-only action/event history; and
 - a disposable two-room prototype created by
@@ -34,3 +35,8 @@ Launching it again with the same `--save` path resumes the simulation. The
 current deterministic text interpreter accepts natural-looking forms of the
 small Version 0.1 action vocabulary; an LLM interpreter will later replace it
 without gaining direct database access.
+
+Try `ask the Observer whether Room B is safe` or
+`tell Observer the lights in Room B are out` while in Room A. NPC context is
+built from that character's location, beliefs, and recent dialogue; objective
+hidden facts are never included.

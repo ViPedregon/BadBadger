@@ -4,9 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from badbadger.agents.context import NPCContextBuilder
+from badbadger.agents.npc import ActionProposal, NPCResponse
 from badbadger.application import create_prototype, open_prototype
 from badbadger.db.repository import GameRepository
 from badbadger.engine.actions import ExamineAction, MoveAction, WaitAction
+from badbadger.engine.dialogue import DialogueService
 
 
 class VerticalSliceTests(unittest.TestCase):
@@ -48,6 +51,56 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertTrue(
                 engine.repository.get_fact("panel", "contains_access_code")
             )
+            context = NPCContextBuilder(engine.repository).build("npc")
+            self.assertNotIn("contains_access_code", repr(context))
+            engine.repository.close()
+
+    def test_dialogue_and_belief_update_persist_across_reload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Path(temp_dir) / "save.db"
+            app = open_prototype(database)
+
+            messages, _ = app.handle("ask the Observer whether Room B is safe")
+            self.assertIn("believe Room B is safe", messages[0])
+            messages, _ = app.handle("tell Observer the lights in Room B are out")
+            self.assertIn("remember", messages[0])
+            self.assertEqual(app.repository.current_time, 2)
+            app.repository.close()
+
+            resumed = open_prototype(database)
+            dialogue = resumed.repository.recent_dialogue("npc")
+            self.assertEqual(len(dialogue), 4)
+            self.assertEqual(
+                dialogue[0]["text"], "ask the Observer whether Room B is safe"
+            )
+            lights = next(
+                belief
+                for belief in resumed.repository.beliefs_for("npc")
+                if belief["predicate"] == "lights_on"
+            )
+            self.assertFalse(lights["value"])
+            resumed.repository.close()
+
+    def test_npc_action_proposal_cannot_directly_change_world_state(self):
+        class ProposingBackend:
+            def respond(self, context, player_input):
+                return NPCResponse(
+                    "Perhaps you should go elsewhere.",
+                    proposed_actions=[
+                        ActionProposal("move_player", {"destination_id": "room_b"})
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = create_prototype(Path(temp_dir) / "save.db")
+            service = DialogueService(engine.repository, ProposingBackend())
+            service.converse("npc", "Where should I go?")
+
+            self.assertEqual(engine.repository.get_player()["location_id"], "room_a")
+            record = engine.repository.connection.execute(
+                "SELECT result_json FROM history WHERE record_type = 'dialogue_resolved'"
+            ).fetchone()
+            self.assertIn("rejected_action_proposals", record["result_json"])
             engine.repository.close()
 
     def test_text_commands_are_persisted_and_resumed(self):

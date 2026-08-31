@@ -95,6 +95,35 @@ class GameRepository:
             raise RuntimeError("Simulation has no player")
         return dict(row)
 
+    def characters_at(
+        self, location_id: str, *, kind: str | None = None
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM characters WHERE location_id = ? AND active = 1"
+        parameters: list[Any] = [location_id]
+        if kind is not None:
+            sql += " AND kind = ?"
+            parameters.append(kind)
+        sql += " ORDER BY id"
+        rows = self.connection.execute(sql, parameters).fetchall()
+        return [dict(row) for row in rows]
+
+    def resolve_npc_at_player_location(
+        self, reference: str
+    ) -> tuple[dict[str, Any], str] | None:
+        """Resolve an NPC name at the player's location and return trailing text."""
+        player = self.get_player()
+        candidate = reference.strip()
+        if candidate.lower().startswith("the "):
+            candidate = candidate[4:]
+        for npc in self.characters_at(player["location_id"], kind="npc"):
+            name = npc["name"]
+            if candidate.lower() == name.lower():
+                return npc, ""
+            prefix = f"{name.lower()} "
+            if candidate.lower().startswith(prefix):
+                return npc, candidate[len(name) :].strip()
+        return None
+
     def get_location(self, location_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
             "SELECT * FROM locations WHERE id = ?", (location_id,)
@@ -204,6 +233,27 @@ class GameRepository:
             }
             for row in rows
         ]
+
+    def append_dialogue(self, npc_id: str, speaker_id: str, text: str) -> None:
+        if not text.strip():
+            raise ValueError("Dialogue text cannot be empty")
+        self.connection.execute(
+            "INSERT INTO dialogue(game_time, npc_id, speaker_id, text) VALUES (?, ?, ?, ?)",
+            (self.current_time, npc_id, speaker_id, text),
+        )
+
+    def recent_dialogue(self, npc_id: str, limit: int = 8) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """
+            SELECT d.game_time, d.speaker_id, c.name AS speaker_name, d.text
+            FROM dialogue AS d
+            JOIN characters AS c ON c.id = d.speaker_id
+            WHERE d.npc_id = ?
+            ORDER BY d.id DESC LIMIT ?
+            """,
+            (npc_id, limit),
+        ).fetchall()
+        return [dict(row) for row in reversed(rows)]
 
     def schedule_event(
         self,

@@ -68,3 +68,14 @@ CREATE TABLE IF NOT EXISTS history (
     input_json TEXT NOT NULL DEFAULT '{}',
     result_json TEXT NOT NULL DEFAULT '{}'
 );
+
+CREATE TABLE IF NOT EXISTS dialogue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_time INTEGER NOT NULL,
+    npc_id TEXT NOT NULL REFERENCES characters(id),
+    speaker_id TEXT NOT NULL REFERENCES characters(id),
+    text TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS dialogue_by_npc
+ON dialogue(npc_id, id);

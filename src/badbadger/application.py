@@ -5,8 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
+from badbadger.agents.npc import DeterministicNPCBackend
 from badbadger.db.repository import GameRepository
 from badbadger.engine.actions import ExamineAction, MoveAction, WaitAction
+from badbadger.engine.dialogue import DialogueService
 from badbadger.engine.simulation import SimulationEngine
 
 
@@ -15,6 +17,9 @@ HELP_TEXT = """Commands and examples:
   examine panel      inspect a known subject
   wait 3 minutes     let mission time pass
   look               describe your current location
+  ask Observer ...   speak with an NPC at your location
+  tell Observer ...  give information to an NPC
+  talk to Observer   begin a conversation
   status             show location and mission time
   help               show this message
   quit               save and leave the game"""
@@ -25,6 +30,7 @@ class GameApplication:
 
     def __init__(self, engine: SimulationEngine) -> None:
         self.engine = engine
+        self.dialogue = DialogueService(engine.repository, DeterministicNPCBackend())
 
     @property
     def repository(self) -> GameRepository:
@@ -78,6 +84,23 @@ class GameApplication:
             outcome = self.engine.perform(WaitAction(int(waiting.group(1))))
             return outcome.messages, False
 
+        dialogue_prefix = next(
+            (
+                prefix
+                for prefix in ("talk to ", "speak to ", "ask ", "tell ")
+                if lowered.startswith(prefix)
+            ),
+            None,
+        )
+        if dialogue_prefix is not None:
+            target = self.repository.resolve_npc_at_player_location(
+                text[len(dialogue_prefix) :]
+            )
+            if target is None:
+                return ["That person is not here."], False
+            npc, _ = target
+            return self.dialogue.converse(npc["id"], text), False
+
         return ["I couldn't interpret that yet. Type 'help' for examples."], False
 
 
@@ -127,6 +150,7 @@ def open_prototype(database: str | Path) -> GameApplication:
     if path.exists() and path.stat().st_size > 0:
         repository = GameRepository(path)
         try:
+            repository.create_schema()
             repository.current_time
         except Exception:
             repository.close()
