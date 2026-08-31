@@ -101,6 +101,36 @@ class GameRepository:
         ).fetchone()
         return dict(row) if row else None
 
+    def list_locations(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT * FROM locations ORDER BY id"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def resolve_location(self, reference: str) -> dict[str, Any] | None:
+        """Resolve a player-facing location name without fuzzy guessing."""
+        normalized = " ".join(reference.lower().replace("_", " ").split())
+        for location in self.list_locations():
+            candidates = {
+                " ".join(location["id"].lower().replace("_", " ").split()),
+                " ".join(location["name"].lower().split()),
+            }
+            if normalized in candidates:
+                return location
+        return None
+
+    def describe_subject(self, reference: str) -> tuple[str, str] | None:
+        """Resolve an examinable subject and its objective description."""
+        normalized = " ".join(reference.lower().replace("_", " ").split())
+        rows = self.connection.execute(
+            "SELECT subject_id, value_json FROM facts WHERE predicate = 'description'"
+        ).fetchall()
+        for row in rows:
+            subject_name = " ".join(row["subject_id"].lower().replace("_", " ").split())
+            if normalized == subject_name:
+                return row["subject_id"], str(json.loads(row["value_json"]))
+        return None
+
     def move_character(self, character_id: str, location_id: str) -> None:
         cursor = self.connection.execute(
             "UPDATE characters SET location_id = ? WHERE id = ? AND active = 1",

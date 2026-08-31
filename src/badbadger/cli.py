@@ -1,10 +1,11 @@
-"""Command-line interface for BadBadger."""
+"""Command-line interface for the SQLite-backed BadBadger prototype."""
 
 from __future__ import annotations
 
-import sys
+import argparse
+from pathlib import Path
 
-from badbadger.game_master import ActionResult, GameMaster
+from badbadger.application import open_prototype
 
 
 BANNER = r"""
@@ -14,39 +15,44 @@ BANNER = r"""
  | |_) | (_| | (_| | |_) | (_| | (_| | (_| |  __/ |
  |____/ \__,_|\__,_|____/ \__,_|\__,_|\__, |\___|_|
                                        |___/
- A dialogue-based adventure.  Type 'help' to begin.
+ SQLite prototype. Type 'help' for examples.
 """
 
 
-def main() -> None:
-    """Entry-point for the CLI game loop."""
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run the BadBadger prototype")
+    parser.add_argument(
+        "--save",
+        type=Path,
+        default=Path("badbadger-save.db"),
+        help="SQLite save path (default: ./badbadger-save.db)",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = build_parser().parse_args(argv)
+    app = open_prototype(args.save)
     print(BANNER)
+    print(f"Save: {args.save.resolve()}")
+    for message in app.status():
+        print(message)
 
-    player_name = input("Enter your character's name: ").strip() or "Hero"
-    gm = GameMaster.new_game(player_name)
+    try:
+        while True:
+            try:
+                raw = input("\n> ")
+            except (EOFError, KeyboardInterrupt):
+                print("\nGame saved. Goodbye.")
+                break
 
-    # Show the starting location without incrementing the turn counter
-    look = ActionResult()
-    gm._cmd_look(look)
-    for msg in look.messages:
-        print(msg)
-
-    while not gm.state.game_over:
-        try:
-            raw = input("\n> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nFarewell.")
-            break
-
-        if not raw:
-            continue
-
-        result = gm.process_command(raw)
-        for msg in result.messages:
-            print(msg)
-
-        if result.game_over:
-            break
+            messages, should_quit = app.handle(raw)
+            for message in messages:
+                print(message)
+            if should_quit:
+                break
+    finally:
+        app.repository.close()
 
 
 if __name__ == "__main__":

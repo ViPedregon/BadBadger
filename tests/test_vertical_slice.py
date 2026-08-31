@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from badbadger.application import create_prototype
+from badbadger.application import create_prototype, open_prototype
 from badbadger.db.repository import GameRepository
 from badbadger.engine.actions import ExamineAction, MoveAction, WaitAction
 
@@ -49,6 +49,37 @@ class VerticalSliceTests(unittest.TestCase):
                 engine.repository.get_fact("panel", "contains_access_code")
             )
             engine.repository.close()
+
+    def test_text_commands_are_persisted_and_resumed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Path(temp_dir) / "save.db"
+            app = open_prototype(database)
+
+            messages, should_quit = app.handle("examine the panel")
+            self.assertFalse(should_quit)
+            self.assertIn("operating normally", messages[0])
+
+            messages, _ = app.handle("travel to Room B")
+            self.assertIn("Room B", messages[0])
+            app.repository.close()
+
+            resumed = open_prototype(database)
+            self.assertEqual(resumed.repository.current_time, 7)
+            self.assertEqual(resumed.repository.get_player()["location_id"], "room_b")
+            messages, should_quit = resumed.handle("quit")
+            self.assertTrue(should_quit)
+            self.assertIn("saved", messages[0].lower())
+            resumed.repository.close()
+
+    def test_text_interpreter_rejects_unknown_input_without_advancing_time(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = open_prototype(Path(temp_dir) / "save.db")
+            messages, should_quit = app.handle("perform quantum diplomacy")
+
+            self.assertFalse(should_quit)
+            self.assertIn("couldn't interpret", messages[0])
+            self.assertEqual(app.repository.current_time, 0)
+            app.repository.close()
 
 
 if __name__ == "__main__":

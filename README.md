@@ -23,5 +23,14 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -p "test_vertical_slice.py" -v
 ```
 
-The older CLI remains available through the `badbadger` command while it is
-gradually migrated to the SQLite engine.
+Run the playable SQLite-backed CLI with:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m badbadger.cli --save my-game.db
+```
+
+Launching it again with the same `--save` path resumes the simulation. The
+current deterministic text interpreter accepts natural-looking forms of the
+small Version 0.1 action vocabulary; an LLM interpreter will later replace it
+without gaining direct database access.
