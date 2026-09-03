@@ -1,2 +1,0 @@
-[console_scripts]
-badbadger = badbadger.cli:main
