@@ -160,6 +160,12 @@ class GameRepository:
                 return row["subject_id"], str(json.loads(row["value_json"]))
         return None
 
+    def examinable_subject_ids(self) -> list[str]:
+        rows = self.connection.execute(
+            "SELECT subject_id FROM facts WHERE predicate = 'description' ORDER BY subject_id"
+        ).fetchall()
+        return [str(row["subject_id"]) for row in rows]
+
     def move_character(self, character_id: str, location_id: str) -> None:
         cursor = self.connection.execute(
             "UPDATE characters SET location_id = ? WHERE id = ? AND active = 1",

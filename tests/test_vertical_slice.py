@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from pathlib import Path
 
 from badbadger.agents.context import NPCContextBuilder
+from badbadger.agents.intent import PlayerIntent
 from badbadger.agents.npc import (
     ActionProposal,
     DeterministicNPCBackend,
@@ -13,6 +14,7 @@ from badbadger.agents.npc import (
     NPCResponse,
 )
 from badbadger.agents.openai_client import OpenAIResponsesClient
+from badbadger.agents.openai_intent import OpenAIIntentInterpreter
 from badbadger.application import create_prototype, open_prototype
 from badbadger.db.repository import GameRepository
 from badbadger.engine.actions import ExamineAction, MoveAction, WaitAction
@@ -240,6 +242,83 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertFalse(should_quit)
             self.assertIn("couldn't interpret", messages[0])
             self.assertEqual(app.repository.current_time, 0)
+            app.repository.close()
+
+    def test_llm_intent_handles_natural_movement_and_engine_validates_it(self):
+        class NaturalLanguageInterpreter:
+            def interpret(self, context, player_input):
+                self.context = context
+                self.player_input = player_input
+                return PlayerIntent("move", target_id="room_b")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            interpreter = NaturalLanguageInterpreter()
+            app = open_prototype(
+                Path(temp_dir) / "save.db",
+                intent_interpreter=interpreter,
+                intent_label="fake LLM",
+            )
+            text = "Head into the other room and see what's there"
+
+            messages, _ = app.handle(text)
+
+            self.assertIn("Room B", messages[0])
+            self.assertEqual(app.repository.get_player()["location_id"], "room_b")
+            self.assertEqual(interpreter.player_input, text)
+            self.assertNotIn("contains_access_code", repr(interpreter.context))
+            app.repository.close()
+
+    def test_engine_rejects_llm_intent_with_invented_target(self):
+        class InventingInterpreter:
+            def interpret(self, context, player_input):
+                return PlayerIntent("move", target_id="secret_moon_base")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = open_prototype(
+                Path(temp_dir) / "save.db",
+                intent_interpreter=InventingInterpreter(),
+            )
+
+            messages, _ = app.handle("Take me to the secret moon base")
+
+            self.assertIn("not available", messages[0])
+            self.assertEqual(app.repository.get_player()["location_id"], "room_a")
+            self.assertEqual(app.repository.current_time, 0)
+            app.repository.close()
+
+    def test_openai_intent_adapter_uses_visible_context_and_structured_output(self):
+        class FakeResponses:
+            def __init__(self):
+                self.calls = []
+
+            def parse(self, **kwargs):
+                self.calls.append(kwargs)
+                return SimpleNamespace(
+                    output_parsed=SimpleNamespace(
+                        kind="examine", target_id="panel", minutes=None
+                    )
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = open_prototype(Path(temp_dir) / "save.db")
+            context = app._intent_context()
+            responses = FakeResponses()
+            interpreter = OpenAIIntentInterpreter(
+                "test-model",
+                sdk_client=SimpleNamespace(responses=responses),
+                response_model=object,
+            )
+
+            intent = interpreter.interpret(context, "Study that console closely")
+
+            self.assertEqual(intent, PlayerIntent("examine", "panel"))
+            call = responses.calls[0]
+            self.assertFalse(call["store"])
+            self.assertIs(call["text_format"], object)
+            serialized = call["input"][1]["content"]
+            self.assertIn("Study that console closely", serialized)
+            self.assertNotIn("contains_access_code", serialized)
+            self.assertNotIn("is_safe", serialized)
             app.repository.close()
 
 

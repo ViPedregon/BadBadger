@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-import re
 
+from badbadger.agents.intent import (
+    DeterministicIntentInterpreter,
+    IntentInterpreter,
+    PlayerIntent,
+    PlayerIntentContext,
+)
 from badbadger.agents.npc import DeterministicNPCBackend, NPCBackend
 from badbadger.db.repository import GameRepository
 from badbadger.engine.actions import ExamineAction, MoveAction, WaitAction
@@ -33,9 +38,14 @@ class GameApplication:
         engine: SimulationEngine,
         npc_backend: NPCBackend | None = None,
         backend_label: str = "deterministic",
+        intent_interpreter: IntentInterpreter | None = None,
+        intent_label: str = "deterministic",
     ) -> None:
         self.engine = engine
         self.backend_label = backend_label
+        self.intent_label = intent_label
+        self.local_interpreter = DeterministicIntentInterpreter()
+        self.intent_interpreter = intent_interpreter
         self.dialogue = DialogueService(
             engine.repository, npc_backend or DeterministicNPCBackend()
         )
@@ -57,7 +67,8 @@ class GameApplication:
 
     def handle(self, raw_input: str) -> tuple[list[str], bool]:
         """Handle one text input and return ``(messages, should_quit)``."""
-        text = " ".join(raw_input.strip().split())
+        player_text = raw_input.strip()
+        text = " ".join(player_text.split())
         lowered = text.lower()
         if not text:
             return [], False
@@ -68,48 +79,69 @@ class GameApplication:
         if lowered in {"look", "look around", "status", "where am i"}:
             return self.status(), False
 
-        movement = re.fullmatch(r"(?:go|move|travel)(?:\s+to)?\s+(.+)", text, re.I)
-        if movement:
-            location = self.repository.resolve_location(movement.group(1))
-            if location is None:
-                names = ", ".join(loc["name"] for loc in self.repository.list_locations())
-                return [f"Unknown destination. Known locations: {names}."], False
-            outcome = self.engine.perform(MoveAction(location["id"]))
-            return outcome.messages, False
-
-        examination = re.fullmatch(
-            r"(?:examine|inspect|look at)\s+(?:the\s+)?(.+)", text, re.I
-        )
-        if examination:
-            subject = self.repository.describe_subject(examination.group(1))
-            if subject is None:
-                return ["You find nothing meaningful to examine."], False
-            outcome = self.engine.perform(ExamineAction(subject[0]))
-            return outcome.messages, False
-
-        waiting = re.fullmatch(r"wait(?:\s+for)?\s+(\d+)(?:\s+minutes?)?", text, re.I)
-        if waiting:
-            outcome = self.engine.perform(WaitAction(int(waiting.group(1))))
-            return outcome.messages, False
-
-        dialogue_prefix = next(
-            (
-                prefix
-                for prefix in ("talk to ", "speak to ", "ask ", "tell ")
-                if lowered.startswith(prefix)
-            ),
-            None,
-        )
-        if dialogue_prefix is not None:
-            target = self.repository.resolve_npc_at_player_location(
-                text[len(dialogue_prefix) :]
+        context = self._intent_context()
+        intent = self.local_interpreter.interpret(context, text)
+        source = "deterministic"
+        if intent.kind == "unknown" and self.intent_interpreter is not None:
+            intent = self.intent_interpreter.interpret(context, player_text)
+            source = "llm"
+        with self.repository.transaction():
+            self.repository.record(
+                "intent_interpreted",
+                actor_id=self.repository.get_player()["id"],
+                input_data={"player_input": player_text, "source": source},
+                result_data={
+                    "kind": intent.kind,
+                    "target_id": intent.target_id,
+                    "minutes": intent.minutes,
+                },
             )
-            if target is None:
-                return ["That person is not here."], False
-            npc, _ = target
-            return self.dialogue.converse(npc["id"], text), False
+        return self._execute_intent(intent, player_text), False
 
-        return ["I couldn't interpret that yet. Type 'help' for examples."], False
+    def _intent_context(self) -> PlayerIntentContext:
+        player = self.repository.get_player()
+        current = self.repository.get_location(player["location_id"])
+        if current is None:
+            raise RuntimeError("Player is assigned to an unknown location")
+        return PlayerIntentContext(
+            current_location={"id": current["id"], "name": current["name"]},
+            known_locations=[
+                {"id": item["id"], "name": item["name"]}
+                for item in self.repository.list_locations()
+            ],
+            visible_npcs=[
+                {"id": item["id"], "name": item["name"]}
+                for item in self.repository.characters_at(
+                    current["id"], kind="npc"
+                )
+            ],
+            examinable_subject_ids=self.repository.examinable_subject_ids(),
+        )
+
+    def _execute_intent(self, intent: PlayerIntent, player_input: str) -> list[str]:
+        if intent.kind == "move" and intent.target_id:
+            if self.repository.get_location(intent.target_id) is None:
+                return ["That destination is not available."]
+            return self.engine.perform(MoveAction(intent.target_id)).messages
+        if intent.kind == "examine" and intent.target_id:
+            if intent.target_id not in self.repository.examinable_subject_ids():
+                return ["You find nothing meaningful to examine."]
+            return self.engine.perform(ExamineAction(intent.target_id)).messages
+        if intent.kind == "wait" and intent.minutes is not None:
+            if not 1 <= intent.minutes <= 1_440:
+                return ["You can only wait between 1 and 1,440 minutes."]
+            return self.engine.perform(WaitAction(intent.minutes)).messages
+        if intent.kind == "speak" and intent.target_id:
+            npc = self.repository.get_character(intent.target_id)
+            player = self.repository.get_player()
+            if (
+                npc is None
+                or npc["kind"] != "npc"
+                or npc["location_id"] != player["location_id"]
+            ):
+                return ["That person is not here."]
+            return self.dialogue.converse(npc["id"], player_input)
+        return ["I couldn't interpret that yet. Try rephrasing or type 'help'."]
 
 
 def create_prototype(database: str | Path) -> SimulationEngine:
@@ -157,6 +189,8 @@ def open_prototype(
     *,
     npc_backend: NPCBackend | None = None,
     backend_label: str = "deterministic",
+    intent_interpreter: IntentInterpreter | None = None,
+    intent_label: str = "deterministic",
 ) -> GameApplication:
     """Resume an existing prototype save, or create it on first launch."""
     path = Path(database)
@@ -169,6 +203,16 @@ def open_prototype(
             repository.close()
             raise
         return GameApplication(
-            SimulationEngine(repository), npc_backend, backend_label
+            SimulationEngine(repository),
+            npc_backend,
+            backend_label,
+            intent_interpreter,
+            intent_label,
         )
-    return GameApplication(create_prototype(path), npc_backend, backend_label)
+    return GameApplication(
+        create_prototype(path),
+        npc_backend,
+        backend_label,
+        intent_interpreter,
+        intent_label,
+    )

@@ -58,3 +58,9 @@ The client uses `responses.parse` with a strict Pydantic response model and
 backend if the API call still fails. The API receives only the filtered NPC
 context and exact player input; it cannot access SQLite or directly execute
 proposed actions.
+
+When OpenAI mode is enabled, unfamiliar player phrasing also goes through a
+separate structured intent interpreter. Familiar commands are still parsed
+locally to avoid unnecessary API calls. The intent model can propose movement,
+examination, waiting, conversation, or `unknown`; the deterministic engine
+validates every target and duration before changing state.

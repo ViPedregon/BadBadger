@@ -6,7 +6,10 @@ import argparse
 from pathlib import Path
 
 from badbadger.application import open_prototype
-from badbadger.config import build_configured_npc_backend
+from badbadger.config import (
+    build_configured_intent_interpreter,
+    build_configured_npc_backend,
+)
 
 
 BANNER = r"""
@@ -34,14 +37,18 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     npc_backend, backend_label = build_configured_npc_backend()
+    intent_interpreter, intent_label = build_configured_intent_interpreter()
     app = open_prototype(
         args.save,
         npc_backend=npc_backend,
         backend_label=backend_label,
+        intent_interpreter=intent_interpreter,
+        intent_label=intent_label,
     )
     print(BANNER)
     print(f"Save: {args.save.resolve()}")
     print(f"NPC backend: {app.backend_label}")
+    print(f"Intent interpreter: {app.intent_label}")
     for message in app.status():
         print(message)
 
