@@ -40,3 +40,21 @@ Try `ask the Observer whether Room B is safe` or
 `tell Observer the lights in Room B are out` while in Room A. NPC context is
 built from that character's location, beliefs, and recent dialogue; objective
 hidden facts are never included.
+
+## Optional OpenAI NPC dialogue
+
+The default NPC backend remains deterministic and requires no network access.
+To enable structured LLM dialogue through the OpenAI Responses API:
+
+```powershell
+python -m pip install -e ".[openai]"
+$env:OPENAI_API_KEY = "your-api-key"
+$env:BADBADGER_OPENAI_MODEL = "gpt-5.6"  # optional override
+python -m badbadger.cli --save my-game.db
+```
+
+The client uses `responses.parse` with a strict Pydantic response model and
+`store=False`. It retries one malformed response, then uses the deterministic
+backend if the API call still fails. The API receives only the filtered NPC
+context and exact player input; it cannot access SQLite or directly execute
+proposed actions.

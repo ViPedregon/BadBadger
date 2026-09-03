@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+import logging
 from typing import Any, Protocol
 
 from badbadger.agents.context import NPCContext
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,7 @@ class NPCResponse:
     dialogue: str
     proposed_actions: list[ActionProposal] = field(default_factory=list)
     belief_updates: list[BeliefProposal] = field(default_factory=list)
+    degraded: bool = False
 
 
 class NPCBackend(Protocol):
@@ -64,3 +68,24 @@ class DeterministicNPCBackend:
         if any(word in lowered for word in ("hello", "hi", "talk", "speak")):
             return NPCResponse("Hello. What would you like to discuss?")
         return NPCResponse("I understand what you said, but I have nothing to add.")
+
+
+class FallbackNPCBackend:
+    """Use a safe local backend whenever the primary backend fails."""
+
+    def __init__(self, primary: NPCBackend, fallback: NPCBackend) -> None:
+        self.primary = primary
+        self.fallback = fallback
+
+    def respond(self, context: NPCContext, player_input: str) -> NPCResponse:
+        try:
+            return self.primary.respond(context, player_input)
+        except Exception:
+            logger.exception(
+                "Primary NPC backend failed for npc_id=%s; using deterministic fallback",
+                context.npc_id,
+            )
+            return replace(
+                self.fallback.respond(context, player_input),
+                degraded=True,
+            )

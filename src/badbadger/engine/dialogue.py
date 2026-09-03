@@ -29,23 +29,29 @@ class DialogueService:
         with self.repository.transaction():
             self.repository.append_dialogue(npc_id, player["id"], player_input)
             self.repository.append_dialogue(npc_id, npc_id, response.dialogue)
-            for proposal in response.belief_updates:
-                self.repository.set_belief(
-                    npc_id,
-                    proposal.subject_id,
-                    proposal.predicate,
-                    proposal.value,
-                    proposal.confidence,
-                )
-            # A short exchange advances time, after which normal events run.
-            self.repository.advance_time(1)
-            event_messages = process_due_events(self.repository)
+            if not response.degraded:
+                for proposal in response.belief_updates:
+                    self.repository.set_belief(
+                        npc_id,
+                        proposal.subject_id,
+                        proposal.predicate,
+                        proposal.value,
+                        proposal.confidence,
+                    )
+                # A successful exchange advances time, then normal events run.
+                self.repository.advance_time(1)
+                event_messages = process_due_events(self.repository)
+            else:
+                event_messages = [
+                    "(AI backend unavailable; the offline reply did not advance time.)"
+                ]
             self.repository.record(
                 "dialogue_resolved",
                 actor_id=player["id"],
                 input_data={"npc_id": npc_id, "player_input": player_input},
                 result_data={
                     "dialogue": response.dialogue,
+                    "degraded": response.degraded,
                     "belief_updates": [item.__dict__ for item in response.belief_updates],
                     "rejected_action_proposals": [
                         item.__dict__ for item in response.proposed_actions

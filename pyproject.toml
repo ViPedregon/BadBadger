@@ -9,6 +9,12 @@ description = "A dialogue-based game with NPC agents and a game master engine"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+openai = [
+    "openai>=2,<3",
+    "pydantic>=2,<3",
+]
+
 [project.scripts]
 badbadger = "badbadger.cli:main"
 

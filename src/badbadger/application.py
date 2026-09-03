@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from badbadger.agents.npc import DeterministicNPCBackend
+from badbadger.agents.npc import DeterministicNPCBackend, NPCBackend
 from badbadger.db.repository import GameRepository
 from badbadger.engine.actions import ExamineAction, MoveAction, WaitAction
 from badbadger.engine.dialogue import DialogueService
@@ -28,9 +28,17 @@ HELP_TEXT = """Commands and examples:
 class GameApplication:
     """Translate a small text vocabulary and delegate mutations to the engine."""
 
-    def __init__(self, engine: SimulationEngine) -> None:
+    def __init__(
+        self,
+        engine: SimulationEngine,
+        npc_backend: NPCBackend | None = None,
+        backend_label: str = "deterministic",
+    ) -> None:
         self.engine = engine
-        self.dialogue = DialogueService(engine.repository, DeterministicNPCBackend())
+        self.backend_label = backend_label
+        self.dialogue = DialogueService(
+            engine.repository, npc_backend or DeterministicNPCBackend()
+        )
 
     @property
     def repository(self) -> GameRepository:
@@ -144,7 +152,12 @@ def create_prototype(database: str | Path) -> SimulationEngine:
     return SimulationEngine(repository)
 
 
-def open_prototype(database: str | Path) -> GameApplication:
+def open_prototype(
+    database: str | Path,
+    *,
+    npc_backend: NPCBackend | None = None,
+    backend_label: str = "deterministic",
+) -> GameApplication:
     """Resume an existing prototype save, or create it on first launch."""
     path = Path(database)
     if path.exists() and path.stat().st_size > 0:
@@ -155,5 +168,7 @@ def open_prototype(database: str | Path) -> GameApplication:
         except Exception:
             repository.close()
             raise
-        return GameApplication(SimulationEngine(repository))
-    return GameApplication(create_prototype(path))
+        return GameApplication(
+            SimulationEngine(repository), npc_backend, backend_label
+        )
+    return GameApplication(create_prototype(path), npc_backend, backend_label)
