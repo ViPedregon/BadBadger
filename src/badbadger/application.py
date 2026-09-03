@@ -167,6 +167,8 @@ def create_prototype(database: str | Path) -> SimulationEngine:
             "is_safe",
             True,
             confidence=0.6,
+            source_type="initial",
+            detail="Scenario-defined starting belief.",
         )
         repository.schedule_event(
             "set_fact",

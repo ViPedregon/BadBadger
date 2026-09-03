@@ -37,6 +37,9 @@ class DialogueService:
                         proposal.predicate,
                         proposal.value,
                         proposal.confidence,
+                        source_type="hearsay",
+                        source_character_id=player["id"],
+                        detail=player_input,
                     )
                 # A successful exchange advances time, then normal events run.
                 self.repository.advance_time(1)

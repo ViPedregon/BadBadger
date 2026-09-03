@@ -47,6 +47,21 @@ CREATE TABLE IF NOT EXISTS beliefs (
     UNIQUE(character_id, subject_id, predicate)
 );
 
+CREATE TABLE IF NOT EXISTS belief_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    belief_id INTEGER NOT NULL REFERENCES beliefs(id) ON DELETE CASCADE,
+    source_type TEXT NOT NULL
+        CHECK (source_type IN ('initial', 'direct', 'hearsay', 'inference', 'legacy')),
+    source_character_id TEXT REFERENCES characters(id),
+    value_json TEXT NOT NULL,
+    confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    detail TEXT,
+    game_time INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS evidence_by_belief
+ON belief_evidence(belief_id, id);
+
 CREATE TABLE IF NOT EXISTS scheduled_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type TEXT NOT NULL,

@@ -12,6 +12,8 @@ The current slice includes:
 - persistent locations, characters, facts, and character-scoped beliefs;
 - deterministic movement, examination, and waiting;
 - persistent NPC dialogue with character-scoped context and beliefs;
+- append-only belief evidence with source provenance and deterministic
+  contradiction resolution;
 - integer mission time and scheduled event processing;
 - an append-only action/event history; and
 - a disposable two-room prototype created by
@@ -40,6 +42,12 @@ Try `ask the Observer whether Room B is safe` or
 `tell Observer the lights in Room B are out` while in Room A. NPC context is
 built from that character's location, beliefs, and recent dialogue; objective
 hidden facts are never included.
+
+Beliefs retain evidence labeled as `initial`, `direct`, `hearsay`, `inference`,
+or `legacy`. New evidence never blindly overwrites an existing belief. Evidence
+scores select the current value, recency breaks score ties, and contradictory
+evidence lowers the resolved confidence. Dialogue-derived updates are recorded
+as hearsay from the player.
 
 ## Optional OpenAI NPC dialogue
 

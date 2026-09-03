@@ -42,6 +42,20 @@ class GameRepository:
     def create_schema(self) -> None:
         schema = files("badbadger.db").joinpath("schema.sql").read_text(encoding="utf-8")
         self.connection.executescript(schema)
+        self.connection.execute(
+            """
+            INSERT INTO belief_evidence(
+                belief_id, source_type, value_json, confidence, detail, game_time
+            )
+            SELECT b.id, 'legacy', b.value_json, b.confidence,
+                   'Belief predates evidence tracking.', b.updated_at_game_time
+            FROM beliefs AS b
+            WHERE NOT EXISTS (
+                SELECT 1 FROM belief_evidence AS e WHERE e.belief_id = b.id
+            )
+            """
+        )
+        self.connection.commit()
 
     def initialize_simulation(self, scenario_id: str) -> None:
         self.connection.execute(
@@ -202,43 +216,150 @@ class GameRepository:
         predicate: str,
         value: Any,
         confidence: float = 1.0,
+        *,
+        source_type: str = "inference",
+        source_character_id: str | None = None,
+        detail: str | None = None,
     ) -> None:
+        valid_sources = {"initial", "direct", "hearsay", "inference", "legacy"}
+        if source_type not in valid_sources:
+            raise ValueError(f"Unknown belief evidence source: {source_type}")
+        if not 0 <= confidence <= 1:
+            raise ValueError("Belief confidence must be between zero and one")
+
+        serialized = json.dumps(value, sort_keys=True)
+        belief = self.connection.execute(
+            """
+            SELECT * FROM beliefs
+            WHERE character_id = ? AND subject_id = ? AND predicate = ?
+            """,
+            (character_id, subject_id, predicate),
+        ).fetchone()
+        if belief is None:
+            cursor = self.connection.execute(
+                """
+                INSERT INTO beliefs(
+                    character_id, subject_id, predicate, value_json,
+                    confidence, updated_at_game_time
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    character_id,
+                    subject_id,
+                    predicate,
+                    serialized,
+                    confidence,
+                    self.current_time,
+                ),
+            )
+            belief_id = int(cursor.lastrowid)
+        else:
+            belief_id = int(belief["id"])
+            evidence_count = self.connection.execute(
+                "SELECT COUNT(*) AS count FROM belief_evidence WHERE belief_id = ?",
+                (belief_id,),
+            ).fetchone()["count"]
+            if evidence_count == 0:
+                self.connection.execute(
+                    """
+                    INSERT INTO belief_evidence(
+                        belief_id, source_type, value_json, confidence, detail, game_time
+                    ) VALUES (?, 'legacy', ?, ?, ?, ?)
+                    """,
+                    (
+                        belief_id,
+                        belief["value_json"],
+                        belief["confidence"],
+                        "Belief predates evidence tracking.",
+                        belief["updated_at_game_time"],
+                    ),
+                )
+
         self.connection.execute(
             """
-            INSERT INTO beliefs(
-                character_id, subject_id, predicate, value_json,
-                confidence, updated_at_game_time
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(character_id, subject_id, predicate) DO UPDATE SET
-                value_json = excluded.value_json,
-                confidence = excluded.confidence,
-                updated_at_game_time = excluded.updated_at_game_time
+            INSERT INTO belief_evidence(
+                belief_id, source_type, source_character_id,
+                value_json, confidence, detail, game_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                character_id,
-                subject_id,
-                predicate,
-                json.dumps(value),
+                belief_id,
+                source_type,
+                source_character_id,
+                serialized,
                 confidence,
+                detail,
                 self.current_time,
             ),
         )
+        self._resolve_belief(belief_id)
+
+    def _resolve_belief(self, belief_id: int) -> None:
+        """Resolve contradictory evidence by score, then most-recent evidence."""
+        rows = self.connection.execute(
+            """
+            SELECT id, value_json, confidence FROM belief_evidence
+            WHERE belief_id = ? ORDER BY id
+            """,
+            (belief_id,),
+        ).fetchall()
+        candidates: dict[str, dict[str, float | int]] = {}
+        for row in rows:
+            candidate = candidates.setdefault(
+                row["value_json"], {"score": 0.0, "latest_id": 0}
+            )
+            candidate["score"] = float(candidate["score"]) + float(row["confidence"])
+            candidate["latest_id"] = int(row["id"])
+        winning_value, winner = max(
+            candidates.items(),
+            key=lambda item: (float(item[1]["score"]), int(item[1]["latest_id"])),
+        )
+        opposition = sum(
+            float(candidate["score"])
+            for value, candidate in candidates.items()
+            if value != winning_value
+        )
+        resolved_confidence = min(1.0, float(winner["score"]) / (1.0 + opposition))
+        self.connection.execute(
+            """
+            UPDATE beliefs
+            SET value_json = ?, confidence = ?, updated_at_game_time = ?
+            WHERE id = ?
+            """,
+            (winning_value, resolved_confidence, self.current_time, belief_id),
+        )
+
+    def belief_evidence(self, belief_id: int) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """
+            SELECT id, source_type, source_character_id, value_json,
+                   confidence, detail, game_time
+            FROM belief_evidence WHERE belief_id = ? ORDER BY id
+            """,
+            (belief_id,),
+        ).fetchall()
+        evidence: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["value"] = json.loads(item.pop("value_json"))
+            evidence.append(item)
+        return evidence
 
     def beliefs_for(self, character_id: str) -> list[dict[str, Any]]:
         rows = self.connection.execute(
             """
-            SELECT subject_id, predicate, value_json, confidence, updated_at_game_time
+            SELECT id, subject_id, predicate, value_json, confidence, updated_at_game_time
             FROM beliefs WHERE character_id = ? ORDER BY id
             """,
             (character_id,),
         ).fetchall()
-        return [
-            {
-                **dict(row),
-                "value": json.loads(row["value_json"]),
-            }
-            for row in rows
-        ]
+        beliefs: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["value"] = json.loads(item.pop("value_json"))
+            item["evidence"] = self.belief_evidence(int(item["id"]))
+            beliefs.append(item)
+        return beliefs
 
     def append_dialogue(self, npc_id: str, speaker_id: str, text: str) -> None:
         if not text.strip():

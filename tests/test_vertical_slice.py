@@ -88,7 +88,85 @@ class VerticalSliceTests(unittest.TestCase):
                 if belief["predicate"] == "lights_on"
             )
             self.assertFalse(lights["value"])
+            self.assertEqual(lights["evidence"][0]["source_type"], "hearsay")
+            self.assertEqual(lights["evidence"][0]["source_character_id"], "player")
             resumed.repository.close()
+
+    def test_contradictory_belief_evidence_resolves_deterministically(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = create_prototype(Path(temp_dir) / "save.db")
+            repository = engine.repository
+
+            initial = repository.beliefs_for("npc")[0]
+            self.assertTrue(initial["value"])
+            self.assertAlmostEqual(initial["confidence"], 0.6)
+            self.assertEqual(initial["evidence"][0]["source_type"], "initial")
+
+            with repository.transaction():
+                repository.set_belief(
+                    "npc",
+                    "room_b",
+                    "is_safe",
+                    False,
+                    0.7,
+                    source_type="hearsay",
+                    source_character_id="player",
+                    detail="The player warned me.",
+                )
+            contradicted = repository.beliefs_for("npc")[0]
+            self.assertFalse(contradicted["value"])
+            self.assertAlmostEqual(contradicted["confidence"], 0.7 / 1.6)
+
+            with repository.transaction():
+                repository.set_belief(
+                    "npc",
+                    "room_b",
+                    "is_safe",
+                    True,
+                    0.9,
+                    source_type="direct",
+                    detail="Inspected Room B personally.",
+                )
+            resolved = repository.beliefs_for("npc")[0]
+            self.assertTrue(resolved["value"])
+            self.assertAlmostEqual(resolved["confidence"], 1.5 / 1.7)
+            self.assertEqual(
+                [item["source_type"] for item in resolved["evidence"]],
+                ["initial", "hearsay", "direct"],
+            )
+            repository.close()
+
+    def test_existing_belief_is_bootstrapped_as_legacy_evidence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = create_prototype(Path(temp_dir) / "save.db")
+            repository = engine.repository
+            repository.connection.execute("DELETE FROM belief_evidence")
+            repository.connection.commit()
+            repository.create_schema()
+
+            migrated = repository.beliefs_for("npc")[0]
+            self.assertEqual(
+                [item["source_type"] for item in migrated["evidence"]],
+                ["legacy"],
+            )
+
+            with repository.transaction():
+                repository.set_belief(
+                    "npc",
+                    "room_b",
+                    "is_safe",
+                    False,
+                    0.8,
+                    source_type="inference",
+                    detail="New evidence after migration.",
+                )
+
+            belief = repository.beliefs_for("npc")[0]
+            self.assertEqual(
+                [item["source_type"] for item in belief["evidence"]],
+                ["legacy", "inference"],
+            )
+            repository.close()
 
     def test_npc_action_proposal_cannot_directly_change_world_state(self):
         class ProposingBackend:
