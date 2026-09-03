@@ -80,10 +80,11 @@ class FallbackNPCBackend:
     def respond(self, context: NPCContext, player_input: str) -> NPCResponse:
         try:
             return self.primary.respond(context, player_input)
-        except Exception:
-            logger.exception(
-                "Primary NPC backend failed for npc_id=%s; using deterministic fallback",
+        except Exception as error:
+            logger.error(
+                "Primary NPC backend failed for npc_id=%s; using deterministic fallback (%s)",
                 context.npc_id,
+                type(error).__name__,
             )
             return replace(
                 self.fallback.respond(context, player_input),

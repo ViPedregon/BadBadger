@@ -122,7 +122,7 @@ class VerticalSliceTests(unittest.TestCase):
                 parsed = SimpleNamespace(
                     dialogue="A structured reply.",
                     proposed_actions=[
-                        SimpleNamespace(kind="wait", parameters={"minutes": 1})
+                        SimpleNamespace(kind="wait", target_id=None, minutes=1)
                     ],
                     belief_updates=[
                         SimpleNamespace(
@@ -148,6 +148,7 @@ class VerticalSliceTests(unittest.TestCase):
 
             self.assertEqual(result.dialogue, "A structured reply.")
             self.assertEqual(result.proposed_actions[0].kind, "wait")
+            self.assertEqual(result.proposed_actions[0].parameters, {"minutes": 1})
             self.assertTrue(result.belief_updates[0].value)
             call = responses.calls[0]
             self.assertEqual(call["model"], "test-model")

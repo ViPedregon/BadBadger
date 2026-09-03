@@ -84,14 +84,19 @@ class OpenAIIntentInterpreter:
                 break
             except Exception as error:
                 last_error = error
-                if attempt == 0:
-                    logger.warning("Intent parsing failed; retrying once: %s", error)
+                if attempt == 0 and isinstance(error, ValueError):
+                    logger.warning(
+                        "Intent parsing failed local validation; retrying once (%s)",
+                        type(error).__name__,
+                    )
                     messages.append(
                         {
                             "role": "system",
                             "content": "Return exactly one intent matching the schema.",
                         }
                     )
+                else:
+                    break
         if parsed is None:
             assert last_error is not None
             raise last_error

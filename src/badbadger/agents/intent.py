@@ -99,6 +99,9 @@ class SafeIntentInterpreter:
     def interpret(self, context: PlayerIntentContext, player_input: str) -> PlayerIntent:
         try:
             return self.primary.interpret(context, player_input)
-        except Exception:
-            logger.exception("Player-intent backend failed; returning unknown intent")
+        except Exception as error:
+            logger.error(
+                "Player-intent backend failed; returning unknown intent (%s)",
+                type(error).__name__,
+            )
             return PlayerIntent("unknown")

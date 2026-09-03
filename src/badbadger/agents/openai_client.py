@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import json
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from badbadger.agents.context import NPCContext
 from badbadger.agents.npc import ActionProposal, BeliefProposal, NPCResponse
@@ -43,18 +43,16 @@ def _build_response_model() -> type[Any]:
     action_model = create_model(
         "ActionProposalModel",
         __config__=strict_config,
-        kind=(str, Field(min_length=1)),
-        parameters=(
-            dict[str, bool | int | float | str],
-            Field(default_factory=dict),
-        ),
+        kind=(Literal["move", "wait"], ...),
+        target_id=(str | None, ...),
+        minutes=(int | None, Field(ge=1, le=1_440)),
     )
     return create_model(
         "NPCResponseModel",
         __config__=strict_config,
         dialogue=(str, Field(min_length=1, max_length=2_000)),
-        proposed_actions=(list[action_model], Field(default_factory=list)),
-        belief_updates=(list[belief_model], Field(default_factory=list)),
+        proposed_actions=(list[action_model], ...),
+        belief_updates=(list[belief_model], ...),
     )
 
 
@@ -111,10 +109,10 @@ class OpenAIResponsesClient:
                 break
             except Exception as error:
                 last_error = error
-                if attempt == 0:
+                if attempt == 0 and isinstance(error, ValueError):
                     logger.warning(
-                        "Structured NPC response failed validation; retrying once: %s",
-                        error,
+                        "Structured NPC response failed local validation; retrying once (%s)",
+                        type(error).__name__,
                     )
                     input_messages.append(
                         {
@@ -125,6 +123,8 @@ class OpenAIResponsesClient:
                             ),
                         }
                     )
+                else:
+                    break
         if parsed is None:
             assert last_error is not None
             raise last_error
@@ -132,7 +132,17 @@ class OpenAIResponsesClient:
         return NPCResponse(
             dialogue=parsed.dialogue,
             proposed_actions=[
-                ActionProposal(item.kind, dict(item.parameters))
+                ActionProposal(
+                    item.kind,
+                    {
+                        key: value
+                        for key, value in {
+                            "target_id": item.target_id,
+                            "minutes": item.minutes,
+                        }.items()
+                        if value is not None
+                    },
+                )
                 for item in parsed.proposed_actions
             ],
             belief_updates=[
