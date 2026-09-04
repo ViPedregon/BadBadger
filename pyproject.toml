@@ -22,7 +22,7 @@ badbadger = "badbadger.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-badbadger = ["db/schema.sql"]
+badbadger = ["db/schema.sql", "scenarios/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

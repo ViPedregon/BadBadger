@@ -1,0 +1,36 @@
+{
+  "scenario_id": "prototype-0.1",
+  "locations": [
+    {"id": "room_a", "name": "Room A", "description": "A plain testing room."},
+    {"id": "room_b", "name": "Room B", "description": "Another plain testing room."}
+  ],
+  "connections": [
+    {"from": "room_a", "to": "room_b", "minutes": 5},
+    {"from": "room_b", "to": "room_a", "minutes": 5}
+  ],
+  "characters": [
+    {"id": "player", "kind": "player", "name": "Player", "location_id": "room_a"},
+    {
+      "id": "npc", "kind": "npc", "name": "Observer", "location_id": "room_a",
+      "parameters": {
+        "temperament": "cautious",
+        "risk_tolerance": 0.35,
+        "autonomy_enabled": true,
+        "decision_cooldown_minutes": 10,
+        "first_decision_after_minutes": 3
+      },
+      "goals": [{"description": "Inspect Room B when an opportunity arises.", "priority": 1}],
+      "beliefs": [{"subject_id": "room_b", "predicate": "is_safe", "value": true, "confidence": 0.6}]
+    }
+  ],
+  "facts": [
+    {"subject_id": "panel", "predicate": "description", "value": "A status panel shows that the test system is operating normally."},
+    {"subject_id": "panel", "predicate": "contains_access_code", "value": true, "hidden": true}
+  ],
+  "events": [
+    {
+      "type": "set_fact", "due_time": 10, "cancellation_key": "room_b_lights",
+      "payload": {"subject_id": "room_b", "predicate": "lights_on", "value": false, "player_visible": true, "visible_message": "The lights in Room B flicker and go dark."}
+    }
+  ]
+}

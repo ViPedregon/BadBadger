@@ -72,6 +72,15 @@ class GameRepository:
             raise RuntimeError("Simulation has not been initialized")
         return int(row["current_time_minutes"])
 
+    @property
+    def scenario_id(self) -> str:
+        row = self.connection.execute(
+            "SELECT scenario_id FROM simulation WHERE id = 1"
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("Simulation has not been initialized")
+        return str(row["scenario_id"])
+
     def advance_time(self, minutes: int) -> int:
         if minutes < 0:
             raise ValueError("Mission time cannot move backwards")
@@ -148,6 +157,41 @@ class GameRepository:
             "INSERT INTO characters(id, kind, name, location_id) VALUES (?, ?, ?, ?)",
             (character_id, kind, name, location_id),
         )
+
+    def set_npc_parameters(self, character_id: str, parameters: dict[str, Any]) -> None:
+        character = self.get_character(character_id)
+        if character is None or character["kind"] != "npc":
+            raise ValueError(f"NPC parameters require an NPC: {character_id}")
+        self.connection.execute(
+            """
+            INSERT INTO npc_parameters(character_id, parameters_json) VALUES (?, ?)
+            ON CONFLICT(character_id) DO UPDATE SET parameters_json=excluded.parameters_json
+            """,
+            (character_id, json.dumps(parameters, sort_keys=True)),
+        )
+
+    def npc_parameters(self, character_id: str) -> dict[str, Any]:
+        row = self.connection.execute(
+            "SELECT parameters_json FROM npc_parameters WHERE character_id=?",
+            (character_id,),
+        ).fetchone()
+        return json.loads(row["parameters_json"]) if row else {}
+
+    def find_npc(self, reference: str) -> dict[str, Any] | None:
+        normalized = reference.strip().lower()
+        rows = self.connection.execute(
+            "SELECT * FROM characters WHERE kind='npc' ORDER BY id"
+        ).fetchall()
+        for row in rows:
+            if normalized in {row["id"].lower(), row["name"].lower()}:
+                return dict(row)
+        return None
+
+    def list_npcs(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT * FROM characters WHERE kind='npc' ORDER BY name, id"
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def get_character(self, character_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(

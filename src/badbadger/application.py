@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from importlib.resources import as_file, files
 
 from badbadger.agents.intent import (
     DeterministicIntentInterpreter,
@@ -16,6 +17,7 @@ from badbadger.engine.actions import ExamineAction, MoveAction, WaitAction
 from badbadger.engine.autonomy import AutonomyScheduler
 from badbadger.engine.dialogue import DialogueService
 from badbadger.engine.simulation import SimulationEngine
+from badbadger.scenarios.loader import load_scenario
 
 
 HELP_TEXT = """Commands and examples:
@@ -26,6 +28,7 @@ HELP_TEXT = """Commands and examples:
   ask Observer ...   speak with an NPC at your location
   tell Observer ...  give information to an NPC
   talk to Observer   begin a conversation
+  npc Observer       inspect an NPC's configured parameters
   status             show location and mission time
   help               show this message
   quit               save and leave the game"""
@@ -82,6 +85,13 @@ class GameApplication:
             return [HELP_TEXT], False
         if lowered in {"look", "look around", "status", "where am i"}:
             return self.status(), False
+        if lowered == "npc":
+            names = [row["name"] for row in self.repository.list_npcs()]
+            return ["NPCs: " + (", ".join(names) if names else "none")], False
+        if lowered.startswith("npc "):
+            return self.inspect_npc(text[4:].strip()), False
+        if lowered.startswith("inspect npc "):
+            return self.inspect_npc(text[12:].strip()), False
 
         context = self._intent_context()
         intent = self.local_interpreter.interpret(context, text)
@@ -149,51 +159,49 @@ class GameApplication:
             return self.dialogue.converse(npc["id"], player_input)
         return ["I couldn't interpret that yet. Try rephrasing or type 'help'."]
 
+    def inspect_npc(self, reference: str) -> list[str]:
+        """Render NPC-scoped runtime state without leaking hidden world facts."""
+        npc = self.repository.find_npc(reference)
+        if npc is None:
+            return [f"Unknown NPC: {reference}"]
+        location = self.repository.get_location(npc["location_id"])
+        activity = self.repository.pending_activity(npc["id"])
+        parameters = self.repository.npc_parameters(npc["id"])
+        lines = [
+            f"NPC: {npc['name']} ({npc['id']})",
+            f"Location: {location['name'] if location else npc['location_id']}",
+            f"Activity: {activity['kind'] if activity else 'idle'}",
+            "Parameters:",
+        ]
+        lines.extend(
+            f"  {key}: {value!r}" for key, value in sorted(parameters.items())
+        )
+        if not parameters:
+            lines.append("  (none)")
+        lines.append("Goals:")
+        goals = self.repository.goals_for(npc["id"])
+        lines.extend(
+            f"  [{goal['priority']}] {goal['description']}" for goal in goals
+        )
+        if not goals:
+            lines.append("  (none)")
+        lines.append("Beliefs:")
+        beliefs = self.repository.beliefs_for(npc["id"])
+        lines.extend(
+            f"  {belief['subject_id']}.{belief['predicate']} = "
+            f"{belief['value']!r} (confidence {belief['confidence']:.3f})"
+            for belief in beliefs
+        )
+        if not beliefs:
+            lines.append("  (none)")
+        return ["\n".join(lines)]
+
 
 def create_prototype(database: str | Path) -> SimulationEngine:
     """Create a deliberately generic two-room test simulation."""
-    repository = GameRepository(database)
-    repository.create_schema()
-    with repository.transaction():
-        repository.initialize_simulation("prototype-0.1")
-        repository.add_location("room_a", "Room A", "A plain testing room.")
-        repository.add_location("room_b", "Room B", "Another plain testing room.")
-        repository.add_connection("room_a", "room_b", 5)
-        repository.add_connection("room_b", "room_a", 5)
-        repository.add_character("player", "player", "Player", "room_a")
-        repository.add_character("npc", "npc", "Observer", "room_a")
-        repository.add_goal("npc", "Inspect Room B when an opportunity arises.", 1)
-        repository.ensure_decision_event("npc", 3)
-
-        repository.set_fact(
-            "panel",
-            "description",
-            "A status panel shows that the test system is operating normally.",
-        )
-        repository.set_fact("panel", "contains_access_code", True, hidden=True)
-        repository.set_belief(
-            "npc",
-            "room_b",
-            "is_safe",
-            True,
-            confidence=0.6,
-            source_type="initial",
-            detail="Scenario-defined starting belief.",
-        )
-        repository.schedule_event(
-            "set_fact",
-            due_time=10,
-            payload={
-                "subject_id": "room_b",
-                "predicate": "lights_on",
-                "value": False,
-                "player_visible": True,
-                "visible_message": "The lights in Room B flicker and go dark.",
-            },
-            cancellation_key="room_b_lights",
-        )
-        repository.record("simulation_created", result_data={"scenario": "prototype-0.1"})
-    return SimulationEngine(repository)
+    resource = files("badbadger.scenarios").joinpath("prototype.json")
+    with as_file(resource) as path:
+        return load_scenario(path, database)
 
 
 def open_prototype(
@@ -203,6 +211,7 @@ def open_prototype(
     backend_label: str = "deterministic",
     intent_interpreter: IntentInterpreter | None = None,
     intent_label: str = "deterministic",
+    scenario: str | Path | None = None,
 ) -> GameApplication:
     """Resume an existing prototype save, or create it on first launch."""
     path = Path(database)
@@ -211,11 +220,20 @@ def open_prototype(
         try:
             repository.create_schema()
             repository.current_time
-            with repository.transaction():
-                repository.add_connection("room_a", "room_b", 5)
-                repository.add_connection("room_b", "room_a", 5)
-                repository.add_goal("npc", "Inspect Room B when an opportunity arises.", 1)
-                repository.ensure_decision_event("npc", repository.current_time + 3)
+            if repository.scenario_id == "prototype-0.1":
+                with repository.transaction():
+                    repository.add_connection("room_a", "room_b", 5)
+                    repository.add_connection("room_b", "room_a", 5)
+                    repository.add_goal("npc", "Inspect Room B when an opportunity arises.", 1)
+                    if not repository.npc_parameters("npc"):
+                        repository.set_npc_parameters("npc", {
+                            "autonomy_enabled": True,
+                            "decision_cooldown_minutes": 10,
+                            "first_decision_after_minutes": 3,
+                            "risk_tolerance": 0.35,
+                            "temperament": "cautious",
+                        })
+                    repository.ensure_decision_event("npc", repository.current_time + 3)
         except Exception:
             repository.close()
             raise
@@ -226,8 +244,9 @@ def open_prototype(
             intent_interpreter,
             intent_label,
         )
+    engine = load_scenario(scenario, path) if scenario else create_prototype(path)
     return GameApplication(
-        create_prototype(path),
+        engine,
         npc_backend,
         backend_label,
         intent_interpreter,

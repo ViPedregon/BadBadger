@@ -23,10 +23,21 @@ class AutonomyScheduler:
             npc_id = event["payload"]["npc_id"]
             npc = self.repository.get_character(npc_id)
             activity = self.repository.pending_activity(npc_id)
+            parameters = self.repository.npc_parameters(npc_id)
+            enabled = parameters.get("autonomy_enabled", True)
+            cooldown = parameters.get("decision_cooldown_minutes", self.cooldown)
+            if not isinstance(enabled, bool):
+                enabled = True
+            if not isinstance(cooldown, int) or cooldown < 1:
+                cooldown = self.cooldown
+            if not enabled:
+                with self.repository.transaction():
+                    self.repository.mark_event_processed(event["id"])
+                continue
             if not npc or not npc["active"] or activity:
                 with self.repository.transaction():
                     self.repository.mark_event_processed(event["id"])
-                    next_time = activity["due_time"] if activity else self.repository.current_time + self.cooldown
+                    next_time = activity["due_time"] if activity else self.repository.current_time + cooldown
                     self.repository.ensure_decision_event(npc_id, next_time)
                 continue
             if calls >= call_budget:
@@ -48,7 +59,7 @@ class AutonomyScheduler:
                         if message:
                             messages.append(message)
                 self.repository.mark_event_processed(event["id"])
-                self.repository.ensure_decision_event(npc_id, self.repository.current_time + self.cooldown)
+                self.repository.ensure_decision_event(npc_id, self.repository.current_time + cooldown)
                 self.repository.record(
                     "npc_decision",
                     actor_id=npc_id,

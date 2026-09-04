@@ -31,6 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("badbadger-save.db"),
         help="SQLite save path (default: ./badbadger-save.db)",
     )
+    parser.add_argument(
+        "--scenario",
+        type=Path,
+        help="JSON scenario to load when creating a new save",
+    )
     return parser
 
 
@@ -44,6 +49,7 @@ def main(argv: list[str] | None = None) -> None:
         backend_label=backend_label,
         intent_interpreter=intent_interpreter,
         intent_label=intent_label,
+        scenario=args.scenario,
     )
     print(BANNER)
     print(f"Save: {args.save.resolve()}")

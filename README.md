@@ -15,6 +15,7 @@ The current slice includes:
 - append-only belief evidence with source provenance and deterministic
   contradiction resolution;
 - bounded NPC decision events that can produce independently validated actions;
+- JSON scenario loading with persistent, inspectable NPC parameters;
 - integer mission time and scheduled event processing;
 - an append-only action/event history; and
 - a disposable two-room prototype created by
@@ -33,6 +34,23 @@ Run the playable SQLite-backed CLI with:
 $env:PYTHONPATH = "src"
 python -m badbadger.cli --save my-game.db
 ```
+
+Type `npc` to list NPCs or `npc Observer` to inspect an NPC's location,
+activity, parameters, goals, and beliefs. The inspector deliberately excludes
+hidden objective facts.
+
+To start a new save from a custom scenario, copy
+`src/badbadger/scenarios/prototype.json`, edit it, and run:
+
+```powershell
+python -m badbadger.cli --save custom-game.db --scenario path\to\scenario.json
+```
+
+The scenario file defines locations, connections, characters, starting beliefs,
+goals, facts, and scheduled events. NPC `parameters` are free-form JSON values;
+the engine currently acts on `autonomy_enabled`, `decision_cooldown_minutes`,
+and `first_decision_after_minutes`, while passing all parameters into the NPC's
+filtered LLM context.
 
 Launching it again with the same `--save` path resumes the simulation. The
 current deterministic text interpreter accepts natural-looking forms of the

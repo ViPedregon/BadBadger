@@ -1,6 +1,7 @@
 """End-to-end tests for the deterministic SQLite vertical slice."""
 
 import tempfile
+import json
 import unittest
 from types import SimpleNamespace
 from pathlib import Path
@@ -19,9 +20,58 @@ from badbadger.application import create_prototype, open_prototype
 from badbadger.db.repository import GameRepository
 from badbadger.engine.actions import ExamineAction, MoveAction, WaitAction
 from badbadger.engine.dialogue import DialogueService
+from badbadger.scenarios.loader import ScenarioError, load_scenario
 
 
 class VerticalSliceTests(unittest.TestCase):
+    def test_npc_parameters_are_inspectable_without_hidden_facts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = open_prototype(Path(temp_dir) / "save.db")
+            messages, _ = app.handle("npc Observer")
+            output = messages[0]
+            self.assertIn("risk_tolerance: 0.35", output)
+            self.assertIn("temperament: 'cautious'", output)
+            self.assertIn("room_b.is_safe", output)
+            self.assertNotIn("contains_access_code", output)
+            self.assertEqual(
+                NPCContextBuilder(app.repository).build("npc").parameters["risk_tolerance"],
+                0.35,
+            )
+            app.repository.close()
+
+    def test_custom_scenario_parameters_control_autonomy(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "scenario.json"
+            data = {
+                "scenario_id": "quiet_test",
+                "locations": [{"id": "lab", "name": "Lab", "description": "A lab."}],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player", "location_id": "lab"},
+                    {"id": "bot", "kind": "npc", "name": "Bot", "location_id": "lab",
+                     "parameters": {"autonomy_enabled": False, "first_decision_after_minutes": 1}},
+                ],
+            }
+            source.write_text(json.dumps(data), encoding="utf-8")
+            app = open_prototype(Path(temp_dir) / "save.db", scenario=source)
+            self.assertFalse(app.repository.npc_parameters("bot")["autonomy_enabled"])
+            app.handle("wait 1")
+            self.assertEqual(app.repository.due_decision_events(10), [])
+            app.repository.close()
+            resumed = open_prototype(Path(temp_dir) / "save.db")
+            self.assertEqual(resumed.repository.scenario_id, "quiet_test")
+            self.assertFalse(resumed.repository.npc_parameters("bot")["autonomy_enabled"])
+            resumed.repository.close()
+
+    def test_invalid_scenario_is_rejected_before_state_is_loaded(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "bad.json"
+            source.write_text(json.dumps({
+                "scenario_id": "bad", "locations": [],
+                "characters": [{"id": "p", "kind": "player", "name": "P", "location_id": "missing"}],
+            }), encoding="utf-8")
+            with self.assertRaises(ScenarioError):
+                load_scenario(source, Path(temp_dir) / "save.db")
+
     def test_idle_npc_makes_bounded_independent_decision(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = open_prototype(Path(temp_dir) / "save.db")
