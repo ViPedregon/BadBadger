@@ -152,6 +152,8 @@ def create_prototype(database: str | Path) -> SimulationEngine:
         repository.initialize_simulation("prototype-0.1")
         repository.add_location("room_a", "Room A", "A plain testing room.")
         repository.add_location("room_b", "Room B", "Another plain testing room.")
+        repository.add_connection("room_a", "room_b", 5)
+        repository.add_connection("room_b", "room_a", 5)
         repository.add_character("player", "player", "Player", "room_a")
         repository.add_character("npc", "npc", "Observer", "room_a")
 
@@ -201,6 +203,9 @@ def open_prototype(
         try:
             repository.create_schema()
             repository.current_time
+            with repository.transaction():
+                repository.add_connection("room_a", "room_b", 5)
+                repository.add_connection("room_b", "room_a", 5)
         except Exception:
             repository.close()
             raise

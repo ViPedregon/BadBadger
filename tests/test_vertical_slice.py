@@ -22,6 +22,28 @@ from badbadger.engine.dialogue import DialogueService
 
 
 class VerticalSliceTests(unittest.TestCase):
+    def test_npc_travel_is_scheduled_visible_and_persists(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db=Path(temp_dir)/"save.db"; app=open_prototype(db)
+            messages,_=app.handle("tell Observer to go check Room B")
+            self.assertTrue(any("departs" in m for m in messages))
+            self.assertEqual(app.repository.get_character("npc")["location_id"],"room_a")
+            app.repository.close(); app=open_prototype(db)
+            self.assertIsNotNone(app.repository.pending_activity("npc"))
+            messages,_=app.handle("wait 4")
+            self.assertFalse(any("arrives" in m for m in messages))
+            self.assertEqual(app.repository.get_character("npc")["location_id"],"room_b")
+            app.repository.close()
+
+    def test_cancelled_npc_travel_never_arrives(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app=open_prototype(Path(temp_dir)/"save.db")
+            app.handle("tell Observer to go check Room B")
+            activity=app.repository.pending_activity("npc")
+            with app.repository.transaction(): app.repository.cancel_activity(activity["id"])
+            app.handle("wait 10")
+            self.assertEqual(app.repository.get_character("npc")["location_id"],"room_a")
+            app.repository.close()
     def test_state_time_event_and_reload(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             database = Path(temp_dir) / "save.db"
@@ -187,7 +209,7 @@ class VerticalSliceTests(unittest.TestCase):
             record = engine.repository.connection.execute(
                 "SELECT result_json FROM history WHERE record_type = 'dialogue_resolved'"
             ).fetchone()
-            self.assertIn("rejected_action_proposals", record["result_json"])
+            self.assertIn('"accepted": false', record["result_json"])
             engine.repository.close()
 
     def test_openai_adapter_sends_filtered_context_and_maps_structured_output(self):

@@ -87,6 +87,32 @@ class GameRepository:
             (location_id, name, description),
         )
 
+    def add_connection(self, origin: str, destination: str, minutes: int) -> None:
+        self.connection.execute("INSERT OR IGNORE INTO location_connections VALUES (?,?,?)", (origin,destination,minutes))
+
+    def connection_duration(self, origin: str, destination: str) -> int | None:
+        row=self.connection.execute("SELECT duration_minutes FROM location_connections WHERE origin_id=? AND destination_id=?",(origin,destination)).fetchone()
+        return int(row[0]) if row else None
+
+    def pending_activity(self, character_id: str) -> dict[str, Any] | None:
+        row=self.connection.execute("SELECT * FROM character_activities WHERE character_id=? AND status='pending'",(character_id,)).fetchone()
+        return dict(row) if row else None
+
+    def create_travel(self, character_id: str, destination: str, minutes: int) -> dict[str, Any]:
+        actor=self.get_character(character_id); assert actor
+        due=self.current_time+minutes
+        cur=self.connection.execute("INSERT INTO character_activities(character_id,kind,origin_id,destination_id,started_at,due_time) VALUES (?,'travel',?,?,?,?)",(character_id,actor['location_id'],destination,self.current_time,due))
+        activity_id=int(cur.lastrowid)
+        event_id=self.schedule_event("character_arrival",due,{"activity_id":activity_id,"character_id":character_id,"destination_id":destination})
+        self.connection.execute("UPDATE character_activities SET event_id=? WHERE id=?",(event_id,activity_id))
+        return {"id":activity_id,"due_time":due,"event_id":event_id}
+
+    def cancel_activity(self, activity_id: int) -> None:
+        row=self.connection.execute("SELECT event_id FROM character_activities WHERE id=? AND status='pending'",(activity_id,)).fetchone()
+        if row:
+            self.connection.execute("UPDATE character_activities SET status='cancelled' WHERE id=?",(activity_id,))
+            self.connection.execute("UPDATE scheduled_events SET status='cancelled' WHERE id=?",(row['event_id'],))
+
     def add_character(
         self, character_id: str, kind: str, name: str, location_id: str
     ) -> None:

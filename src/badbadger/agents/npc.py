@@ -42,6 +42,8 @@ class DeterministicNPCBackend:
 
     def respond(self, context: NPCContext, player_input: str) -> NPCResponse:
         lowered = player_input.lower()
+        if "room b" in lowered and any(word in lowered for word in ("go", "move", "check")):
+            return NPCResponse("I'll go check Room B.", proposed_actions=[ActionProposal("move", {"target_id":"room_b"})])
         if "room b" in lowered and "safe" in lowered:
             belief = next(
                 (

@@ -64,11 +64,14 @@ class SimulationEngine:
         player = self.repository.get_player()
         if player["location_id"] == action.destination_id:
             return ActionOutcome(False, ["You are already there."])
+        duration=self.repository.connection_duration(player["location_id"], action.destination_id)
+        if duration is None:
+            return ActionOutcome(False,["There is no route to that destination."])
         self.repository.move_character(player["id"], action.destination_id)
         return ActionOutcome(
             True,
             [f"You travel to {destination['name']}."],
-            elapsed_minutes=5,
+            elapsed_minutes=duration,
         )
 
     def _examine(self, action: ExamineAction) -> ActionOutcome:

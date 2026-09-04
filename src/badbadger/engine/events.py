@@ -19,8 +19,16 @@ def _set_fact(repository: GameRepository, payload: dict[str, Any]) -> str:
     )
     return payload.get("visible_message", "The world changes.")
 
+def _arrival(repository: GameRepository, payload: dict[str, Any]) -> str:
+    activity=repository.connection.execute("SELECT * FROM character_activities WHERE id=?",(payload['activity_id'],)).fetchone()
+    if not activity or activity['status']!='pending': return ""
+    repository.move_character(payload['character_id'],payload['destination_id'])
+    repository.connection.execute("UPDATE character_activities SET status='completed' WHERE id=?",(payload['activity_id'],))
+    actor=repository.get_character(payload['character_id']); player=repository.get_player()
+    return f"{actor['name']} arrives." if player['location_id']==payload['destination_id'] else ""
 
-EVENT_HANDLERS: dict[str, EventHandler] = {"set_fact": _set_fact}
+
+EVENT_HANDLERS: dict[str, EventHandler] = {"set_fact": _set_fact,"character_arrival":_arrival}
 
 
 def process_due_events(repository: GameRepository) -> list[str]:
@@ -37,6 +45,6 @@ def process_due_events(repository: GameRepository) -> list[str]:
             input_data={"event_id": event["id"], "event_type": event["event_type"]},
             result_data={"message": message},
         )
-        if event["payload"].get("player_visible", False):
+        if message and (event["event_type"]=="character_arrival" or event["payload"].get("player_visible", False)):
             messages.append(message)
     return messages

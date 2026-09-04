@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS locations (
     name TEXT NOT NULL,
     description TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS location_connections (
+    origin_id TEXT NOT NULL REFERENCES locations(id), destination_id TEXT NOT NULL REFERENCES locations(id),
+    duration_minutes INTEGER NOT NULL CHECK(duration_minutes > 0), PRIMARY KEY(origin_id,destination_id)
+);
 
 CREATE TABLE IF NOT EXISTS characters (
     id TEXT PRIMARY KEY,
@@ -70,6 +74,12 @@ CREATE TABLE IF NOT EXISTS scheduled_events (
         CHECK (status IN ('pending', 'processed', 'cancelled')),
     payload_json TEXT NOT NULL DEFAULT '{}',
     cancellation_key TEXT
+);
+CREATE TABLE IF NOT EXISTS character_activities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL REFERENCES characters(id),
+    kind TEXT NOT NULL, origin_id TEXT NOT NULL REFERENCES locations(id), destination_id TEXT REFERENCES locations(id),
+    started_at INTEGER NOT NULL, due_time INTEGER NOT NULL, event_id INTEGER, status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','completed','cancelled'))
 );
 
 CREATE INDEX IF NOT EXISTS due_events
