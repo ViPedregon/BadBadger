@@ -16,6 +16,7 @@ class NPCContext:
     visible_characters: list[dict[str, str]]
     beliefs: list[dict[str, Any]]
     recent_dialogue: list[dict[str, Any]]
+    goals: list[dict[str, Any]]
 
 
 class NPCContextBuilder:
@@ -47,4 +48,5 @@ class NPCContextBuilder:
             visible_characters=visible,
             beliefs=self.repository.beliefs_for(npc_id),
             recent_dialogue=self.repository.recent_dialogue(npc_id),
+            goals=self.repository.goals_for(npc_id),
         )

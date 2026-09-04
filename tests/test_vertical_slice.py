@@ -22,6 +22,40 @@ from badbadger.engine.dialogue import DialogueService
 
 
 class VerticalSliceTests(unittest.TestCase):
+    def test_idle_npc_makes_bounded_independent_decision(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = open_prototype(Path(temp_dir) / "save.db")
+            messages, _ = app.handle("wait 3")
+            self.assertTrue(any("departs" in message for message in messages))
+            activity = app.repository.pending_activity("npc")
+            self.assertEqual(activity["destination_id"], "room_b")
+            self.assertEqual(app.repository.get_character("npc")["location_id"], "room_a")
+            app.handle("wait 5")
+            self.assertEqual(app.repository.get_character("npc")["location_id"], "room_b")
+            app.repository.close()
+
+    def test_decision_call_budget_limits_npc_backend_calls(self):
+        class CountingBackend:
+            def __init__(self): self.calls = 0
+            def respond(self, context, player_input):
+                self.calls += 1
+                return NPCResponse("I will remain here.")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = create_prototype(Path(temp_dir) / "save.db")
+            with engine.repository.transaction():
+                engine.repository.add_character("npc_2", "npc", "Second", "room_a")
+                engine.repository.ensure_decision_event("npc_2", 3)
+            engine.repository.close()
+            backend = CountingBackend()
+            app = open_prototype(
+                Path(temp_dir) / "save.db", npc_backend=backend
+            )
+            app.handle("wait 3")
+            self.assertEqual(backend.calls, 1)
+            remaining = app.repository.due_decision_events(10)
+            self.assertEqual(len(remaining), 1)
+            app.repository.close()
     def test_npc_travel_is_scheduled_visible_and_persists(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             db=Path(temp_dir)/"save.db"; app=open_prototype(db)
@@ -67,7 +101,7 @@ class VerticalSliceTests(unittest.TestCase):
                 self.assertEqual(reloaded.get_player()["location_id"], "room_b")
                 self.assertFalse(reloaded.get_fact("room_b", "lights_on"))
                 status = reloaded.connection.execute(
-                    "SELECT status FROM scheduled_events"
+                    "SELECT status FROM scheduled_events WHERE event_type='set_fact'"
                 ).fetchone()["status"]
                 self.assertEqual(status, "processed")
 

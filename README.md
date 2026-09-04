@@ -14,6 +14,7 @@ The current slice includes:
 - persistent NPC dialogue with character-scoped context and beliefs;
 - append-only belief evidence with source provenance and deterministic
   contradiction resolution;
+- bounded NPC decision events that can produce independently validated actions;
 - integer mission time and scheduled event processing;
 - an append-only action/event history; and
 - a disposable two-room prototype created by

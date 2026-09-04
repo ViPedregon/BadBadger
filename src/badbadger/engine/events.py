@@ -35,6 +35,8 @@ def process_due_events(repository: GameRepository) -> list[str]:
     """Process all currently due events in stable order."""
     messages: list[str] = []
     for event in repository.due_events():
+        if event["event_type"] == "npc_decision":
+            continue
         handler = EVENT_HANDLERS.get(event["event_type"])
         if handler is None:
             raise ValueError(f"Unknown event type: {event['event_type']}")

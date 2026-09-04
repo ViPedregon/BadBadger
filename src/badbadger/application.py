@@ -13,6 +13,7 @@ from badbadger.agents.intent import (
 from badbadger.agents.npc import DeterministicNPCBackend, NPCBackend
 from badbadger.db.repository import GameRepository
 from badbadger.engine.actions import ExamineAction, MoveAction, WaitAction
+from badbadger.engine.autonomy import AutonomyScheduler
 from badbadger.engine.dialogue import DialogueService
 from badbadger.engine.simulation import SimulationEngine
 
@@ -47,6 +48,9 @@ class GameApplication:
         self.local_interpreter = DeterministicIntentInterpreter()
         self.intent_interpreter = intent_interpreter
         self.dialogue = DialogueService(
+            engine.repository, npc_backend or DeterministicNPCBackend()
+        )
+        self.autonomy = AutonomyScheduler(
             engine.repository, npc_backend or DeterministicNPCBackend()
         )
 
@@ -96,7 +100,9 @@ class GameApplication:
                     "minutes": intent.minutes,
                 },
             )
-        return self._execute_intent(intent, player_text), False
+        messages = self._execute_intent(intent, player_text)
+        messages.extend(self.autonomy.process_due(call_budget=1))
+        return messages, False
 
     def _intent_context(self) -> PlayerIntentContext:
         player = self.repository.get_player()
@@ -156,6 +162,8 @@ def create_prototype(database: str | Path) -> SimulationEngine:
         repository.add_connection("room_b", "room_a", 5)
         repository.add_character("player", "player", "Player", "room_a")
         repository.add_character("npc", "npc", "Observer", "room_a")
+        repository.add_goal("npc", "Inspect Room B when an opportunity arises.", 1)
+        repository.ensure_decision_event("npc", 3)
 
         repository.set_fact(
             "panel",
@@ -206,6 +214,8 @@ def open_prototype(
             with repository.transaction():
                 repository.add_connection("room_a", "room_b", 5)
                 repository.add_connection("room_b", "room_a", 5)
+                repository.add_goal("npc", "Inspect Room B when an opportunity arises.", 1)
+                repository.ensure_decision_event("npc", repository.current_time + 3)
         except Exception:
             repository.close()
             raise

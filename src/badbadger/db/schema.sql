@@ -82,6 +82,15 @@ CREATE TABLE IF NOT EXISTS character_activities (
         CHECK(status IN ('pending','completed','cancelled'))
 );
 
+CREATE TABLE IF NOT EXISTS npc_goals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id TEXT NOT NULL REFERENCES characters(id),
+    description TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 1,
+    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+    UNIQUE(character_id, description)
+);
+
 CREATE INDEX IF NOT EXISTS due_events
 ON scheduled_events(status, due_time, id);
 

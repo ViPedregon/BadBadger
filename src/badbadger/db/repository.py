@@ -98,6 +98,34 @@ class GameRepository:
         row=self.connection.execute("SELECT * FROM character_activities WHERE character_id=? AND status='pending'",(character_id,)).fetchone()
         return dict(row) if row else None
 
+    def add_goal(self, character_id: str, description: str, priority: int = 1) -> None:
+        self.connection.execute(
+            "INSERT OR IGNORE INTO npc_goals(character_id,description,priority) VALUES (?,?,?)",
+            (character_id, description, priority),
+        )
+
+    def goals_for(self, character_id: str) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT description,priority FROM npc_goals WHERE character_id=? AND active=1 ORDER BY priority DESC,id",
+            (character_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def ensure_decision_event(self, character_id: str, due_time: int) -> None:
+        exists = self.connection.execute(
+            "SELECT 1 FROM scheduled_events WHERE event_type='npc_decision' AND status='pending' AND json_extract(payload_json,'$.npc_id')=?",
+            (character_id,),
+        ).fetchone()
+        if not exists:
+            self.schedule_event("npc_decision", due_time, {"npc_id": character_id})
+
+    def due_decision_events(self, limit: int) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT * FROM scheduled_events WHERE event_type='npc_decision' AND status='pending' AND due_time<=? ORDER BY due_time,id LIMIT ?",
+            (self.current_time, limit),
+        ).fetchall()
+        return [{**dict(row), "payload": json.loads(row["payload_json"])} for row in rows]
+
     def create_travel(self, character_id: str, destination: str, minutes: int) -> dict[str, Any]:
         actor=self.get_character(character_id); assert actor
         due=self.current_time+minutes
