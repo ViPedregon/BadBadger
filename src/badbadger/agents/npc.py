@@ -42,6 +42,25 @@ class DeterministicNPCBackend:
 
     def respond(self, context: NPCContext, player_input: str) -> NPCResponse:
         lowered = player_input.lower()
+        if "engine decision tick" in lowered:
+            goals = " ".join(goal["description"] for goal in context.goals).lower()
+            destination = next(
+                (
+                    action
+                    for action in context.available_actions
+                    if action["target_id"].lower() in goals
+                    or action["target_name"].lower() in goals
+                ),
+                None,
+            )
+            if destination is not None:
+                return NPCResponse(
+                    f"I will pursue my goal in {destination['target_name']}.",
+                    proposed_actions=[
+                        ActionProposal("move", {"target_id": destination["target_id"]})
+                    ],
+                )
+            return NPCResponse("I have no useful action to take right now.")
         if "room b" in lowered and any(word in lowered for word in ("go", "move", "check")):
             return NPCResponse("I'll go check Room B.", proposed_actions=[ActionProposal("move", {"target_id":"room_b"})])
         if "room b" in lowered and "safe" in lowered:

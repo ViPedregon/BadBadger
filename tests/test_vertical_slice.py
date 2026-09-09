@@ -24,6 +24,58 @@ from badbadger.scenarios.loader import ScenarioError, load_scenario
 
 
 class VerticalSliceTests(unittest.TestCase):
+    def test_npc_context_contains_only_reachable_action_affordances(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = create_prototype(Path(temp_dir) / "save.db")
+            context = NPCContextBuilder(engine.repository).build("npc")
+            self.assertEqual(context.available_actions, [{
+                "kind": "move", "target_id": "room_b", "target_name": "Room B",
+                "duration_minutes": 5,
+            }])
+            self.assertNotIn("description", repr(context.available_actions))
+            engine.repository.close()
+
+    def test_autonomy_uses_custom_scenario_destination_without_hard_coding(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "scenario.json"
+            source.write_text(json.dumps({
+                "scenario_id": "generic_autonomy",
+                "locations": [
+                    {"id": "lab", "name": "Lab", "description": "A lab."},
+                    {"id": "atrium", "name": "Atrium", "description": "An atrium."},
+                ],
+                "connections": [{"from": "lab", "to": "atrium", "minutes": 7}],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player", "location_id": "lab"},
+                    {"id": "bot", "kind": "npc", "name": "Bot", "location_id": "lab",
+                     "parameters": {"first_decision_after_minutes": 1},
+                     "goals": [{"description": "Survey the Atrium.", "priority": 1}]},
+                ],
+            }), encoding="utf-8")
+            app = open_prototype(Path(temp_dir) / "save.db", scenario=source)
+            messages, _ = app.handle("wait 1")
+            self.assertTrue(any("Atrium" in message for message in messages))
+            self.assertEqual(
+                app.repository.pending_activity("bot")["destination_id"], "atrium"
+            )
+            app.repository.close()
+
+    def test_autonomy_prompt_and_context_are_scenario_generic(self):
+        class CapturingBackend:
+            def respond(self, context, player_input):
+                self.context = context
+                self.player_input = player_input
+                return NPCResponse("No action.")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            backend = CapturingBackend()
+            app = open_prototype(Path(temp_dir) / "save.db", npc_backend=backend)
+            app.handle("wait 3")
+            self.assertNotIn("room_b", backend.player_input)
+            self.assertNotIn("Room B", backend.player_input)
+            self.assertEqual(backend.context.available_actions[0]["target_id"], "room_b")
+            app.repository.close()
+
     def test_npc_parameters_are_inspectable_without_hidden_facts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = open_prototype(Path(temp_dir) / "save.db")

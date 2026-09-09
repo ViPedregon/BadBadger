@@ -1,7 +1,5 @@
 """Tests for BadBadger game engine."""
 
-import pytest
-
 from badbadger.models import GameState, Location, NPC, Player
 from badbadger.npc_agent import NPCAgent
 from badbadger.game_master import GameMaster

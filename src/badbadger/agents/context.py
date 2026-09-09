@@ -18,6 +18,7 @@ class NPCContext:
     recent_dialogue: list[dict[str, Any]]
     goals: list[dict[str, Any]]
     parameters: dict[str, Any]
+    available_actions: list[dict[str, Any]]
 
 
 class NPCContextBuilder:
@@ -51,4 +52,13 @@ class NPCContextBuilder:
             recent_dialogue=self.repository.recent_dialogue(npc_id),
             goals=self.repository.goals_for(npc_id),
             parameters=self.repository.npc_parameters(npc_id),
+            available_actions=[
+                {
+                    "kind": "move",
+                    "target_id": destination["id"],
+                    "target_name": destination["name"],
+                    "duration_minutes": destination["duration_minutes"],
+                }
+                for destination in self.repository.reachable_locations(location["id"])
+            ],
         )

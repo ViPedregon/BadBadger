@@ -46,8 +46,8 @@ class AutonomyScheduler:
             context = self.context_builder.build(npc_id)
             request = (
                 "ENGINE DECISION TICK: Based only on your goals and knowledge, "
-                "propose at most one useful action. Use move with target_id room_b "
-                "(Room B) only when that serves your goals; otherwise propose no action."
+                "propose at most one useful action from available_actions. Copy its "
+                "kind and target_id exactly; otherwise propose no action."
             )
             response = self.backend.respond(context, request)
             with self.repository.transaction():

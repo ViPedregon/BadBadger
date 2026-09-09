@@ -15,6 +15,7 @@ The current slice includes:
 - append-only belief evidence with source provenance and deterministic
   contradiction resolution;
 - bounded NPC decision events that can produce independently validated actions;
+- scenario-generic NPC action affordances derived from the current world graph;
 - JSON scenario loading with persistent, inspectable NPC parameters;
 - integer mission time and scheduled event processing;
 - an append-only action/event history; and
@@ -51,6 +52,11 @@ goals, facts, and scheduled events. NPC `parameters` are free-form JSON values;
 the engine currently acts on `autonomy_enabled`, `decision_cooldown_minutes`,
 and `first_decision_after_minutes`, while passing all parameters into the NPC's
 filtered LLM context.
+
+Autonomous decisions also receive only engine-computed `available_actions`.
+For movement, these contain directly connected destinations and authoritative
+travel durations. The backend selects or declines an affordance; the engine
+still validates the proposal and owns all resulting state changes.
 
 Launching it again with the same `--save` path resumes the simulation. The
 current deterministic text interpreter accepts natural-looking forms of the

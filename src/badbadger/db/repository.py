@@ -103,6 +103,20 @@ class GameRepository:
         row=self.connection.execute("SELECT duration_minutes FROM location_connections WHERE origin_id=? AND destination_id=?",(origin,destination)).fetchone()
         return int(row[0]) if row else None
 
+    def reachable_locations(self, origin: str) -> list[dict[str, Any]]:
+        """Return deterministic movement affordances from one location."""
+        rows = self.connection.execute(
+            """
+            SELECT l.id, l.name, c.duration_minutes
+            FROM location_connections AS c
+            JOIN locations AS l ON l.id = c.destination_id
+            WHERE c.origin_id = ?
+            ORDER BY l.id
+            """,
+            (origin,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def pending_activity(self, character_id: str) -> dict[str, Any] | None:
         row=self.connection.execute("SELECT * FROM character_activities WHERE character_id=? AND status='pending'",(character_id,)).fetchone()
         return dict(row) if row else None
