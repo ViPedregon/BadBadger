@@ -35,6 +35,25 @@ CREATE TABLE IF NOT EXISTS npc_parameters (
     parameters_json TEXT NOT NULL DEFAULT '{}'
 );
 
+CREATE TABLE IF NOT EXISTS appearances (
+    subject_id TEXT NOT NULL,
+    subject_kind TEXT NOT NULL CHECK(subject_kind IN ('character', 'location')),
+    details_json TEXT NOT NULL,
+    PRIMARY KEY(subject_kind, subject_id)
+);
+
+CREATE TABLE IF NOT EXISTS npc_actions (
+    id TEXT PRIMARY KEY,
+    character_id TEXT NOT NULL REFERENCES characters(id),
+    location_id TEXT NOT NULL REFERENCES locations(id),
+    label TEXT NOT NULL,
+    description TEXT NOT NULL,
+    preconditions_json TEXT NOT NULL DEFAULT '[]',
+    effects_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'available'
+        CHECK(status IN ('available', 'used'))
+);
+
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     subject_id TEXT NOT NULL,

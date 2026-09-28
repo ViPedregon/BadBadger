@@ -3,6 +3,7 @@
 import tempfile
 import json
 import unittest
+from importlib.resources import as_file, files
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -20,10 +21,93 @@ from badbadger.application import create_prototype, open_prototype
 from badbadger.db.repository import GameRepository
 from badbadger.engine.actions import ExamineAction, MoveAction, WaitAction
 from badbadger.engine.dialogue import DialogueService
+from badbadger.engine.npc_actions import resolve_npc_proposal
 from badbadger.scenarios.loader import ScenarioError, load_scenario
 
 
 class VerticalSliceTests(unittest.TestCase):
+    def test_relay_crisis_preserves_private_knowledge_and_appearance(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+            sable = NPCContextBuilder(app.repository).build("sable")
+            orr = NPCContextBuilder(app.repository).build("orr")
+            self.assertTrue(next(
+                belief for belief in sable.beliefs
+                if belief["subject_id"] == "sample"
+            )["value"])
+            self.assertFalse(next(
+                belief for belief in orr.beliefs
+                if belief["subject_id"] == "sample"
+            )["value"])
+            self.assertEqual(sable.appearance["hair"], "close-cropped silver")
+            self.assertIn("architecture", sable.location["appearance"])
+            self.assertNotIn("crisis", repr(sable))
+            self.assertNotIn("outcome", repr(orr))
+            app.repository.close()
+
+    def test_player_can_trigger_irreversible_npc_choice(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Path(temp_dir) / "save.db"
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(database, scenario=scenario)
+            app.handle("go to Relay Chamber")
+            messages, _ = app.handle(
+                "tell Technician Orr broadcast the distress packet"
+            )
+            self.assertTrue(any("rescue acknowledgment" in item for item in messages))
+            self.assertEqual(app.repository.simulation_status, "ended")
+            self.assertEqual(
+                app.repository.get_fact("crisis", "outcome"), "distress_broadcast"
+            )
+            with app.repository.transaction():
+                app.repository.move_character("lin", "relay")
+            self.assertEqual(app.repository.available_npc_actions("lin"), [])
+            ended, _ = app.handle("wait 1")
+            self.assertIn("mission has ended", ended[0].lower())
+            app.repository.close()
+            resumed = open_prototype(database)
+            self.assertEqual(resumed.repository.simulation_status, "ended")
+            self.assertEqual(
+                resumed.repository.get_fact("crisis", "outcome"),
+                "distress_broadcast",
+            )
+            resumed.repository.close()
+
+    def test_engine_rejects_invented_npc_interaction(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+            accepted, _ = resolve_npc_proposal(
+                app.repository,
+                "sable",
+                ActionProposal("interact", {"action_id": "invented_override"}),
+            )
+            self.assertFalse(accepted)
+            self.assertFalse(app.repository.get_fact("crisis", "resolved"))
+            self.assertEqual(app.repository.simulation_status, "active")
+            app.repository.close()
+
+    def test_offscreen_npc_consequence_does_not_leak_narration(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+            accepted, message = resolve_npc_proposal(
+                app.repository,
+                "orr",
+                ActionProposal("interact", {"action_id": "orr_broadcast"}),
+            )
+            self.assertTrue(accepted)
+            self.assertEqual(message, "")
+            self.assertEqual(
+                app.repository.get_fact("crisis", "outcome"), "distress_broadcast"
+            )
+            app.repository.close()
+
     def test_npc_context_contains_only_reachable_action_affordances(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             engine = create_prototype(Path(temp_dir) / "save.db")
@@ -358,7 +442,11 @@ class VerticalSliceTests(unittest.TestCase):
                 parsed = SimpleNamespace(
                     dialogue="A structured reply.",
                     proposed_actions=[
-                        SimpleNamespace(kind="wait", target_id=None, minutes=1)
+                        SimpleNamespace(kind="wait", target_id=None, minutes=1),
+                        SimpleNamespace(
+                            kind="interact", target_id=None, minutes=None,
+                            action_id="declared_action",
+                        ),
                     ],
                     belief_updates=[
                         SimpleNamespace(
@@ -385,6 +473,10 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertEqual(result.dialogue, "A structured reply.")
             self.assertEqual(result.proposed_actions[0].kind, "wait")
             self.assertEqual(result.proposed_actions[0].parameters, {"minutes": 1})
+            self.assertEqual(
+                result.proposed_actions[1].parameters,
+                {"action_id": "declared_action"},
+            )
             self.assertTrue(result.belief_updates[0].value)
             call = responses.calls[0]
             self.assertEqual(call["model"], "test-model")

@@ -81,6 +81,13 @@ class GameRepository:
             raise RuntimeError("Simulation has not been initialized")
         return str(row["scenario_id"])
 
+    @property
+    def simulation_status(self) -> str:
+        row = self.connection.execute("SELECT status FROM simulation WHERE id=1").fetchone()
+        if row is None:
+            raise RuntimeError("Simulation has not been initialized")
+        return str(row["status"])
+
     def advance_time(self, minutes: int) -> int:
         if minutes < 0:
             raise ValueError("Mission time cannot move backwards")
@@ -95,6 +102,28 @@ class GameRepository:
             "INSERT INTO locations(id, name, description) VALUES (?, ?, ?)",
             (location_id, name, description),
         )
+
+    def set_appearance(
+        self, subject_id: str, subject_kind: str, details: dict[str, Any]
+    ) -> None:
+        if subject_kind not in {"character", "location"}:
+            raise ValueError(f"Unknown appearance subject kind: {subject_kind}")
+        self.connection.execute(
+            """
+            INSERT INTO appearances(subject_id, subject_kind, details_json)
+            VALUES (?, ?, ?)
+            ON CONFLICT(subject_kind, subject_id) DO UPDATE SET
+                details_json=excluded.details_json
+            """,
+            (subject_id, subject_kind, json.dumps(details, sort_keys=True)),
+        )
+
+    def appearance_for(self, subject_id: str, subject_kind: str) -> dict[str, Any]:
+        row = self.connection.execute(
+            "SELECT details_json FROM appearances WHERE subject_id=? AND subject_kind=?",
+            (subject_id, subject_kind),
+        ).fetchone()
+        return json.loads(row["details_json"]) if row else {}
 
     def add_connection(self, origin: str, destination: str, minutes: int) -> None:
         self.connection.execute("INSERT OR IGNORE INTO location_connections VALUES (?,?,?)", (origin,destination,minutes))
@@ -116,6 +145,87 @@ class GameRepository:
             (origin,),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def add_npc_action(
+        self,
+        action_id: str,
+        character_id: str,
+        location_id: str,
+        label: str,
+        description: str,
+        preconditions: list[dict[str, Any]],
+        effects: dict[str, Any],
+    ) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO npc_actions(
+                id, character_id, location_id, label, description,
+                preconditions_json, effects_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                action_id, character_id, location_id, label, description,
+                json.dumps(preconditions, sort_keys=True),
+                json.dumps(effects, sort_keys=True),
+            ),
+        )
+
+    def available_npc_actions(self, character_id: str) -> list[dict[str, Any]]:
+        character = self.get_character(character_id)
+        if character is None:
+            return []
+        rows = self.connection.execute(
+            """
+            SELECT * FROM npc_actions
+            WHERE character_id=? AND location_id=? AND status='available'
+            ORDER BY id
+            """,
+            (character_id, character["location_id"]),
+        ).fetchall()
+        actions: list[dict[str, Any]] = []
+        for row in rows:
+            preconditions = json.loads(row["preconditions_json"])
+            if all(
+                self.get_fact(item["subject_id"], item["predicate"])
+                == item["equals"]
+                for item in preconditions
+            ):
+                actions.append({
+                    "id": row["id"],
+                    "kind": "interact",
+                    "label": row["label"],
+                    "description": row["description"],
+                })
+        return actions
+
+    def apply_npc_action(self, character_id: str, action_id: str) -> tuple[bool, str]:
+        """Apply one predeclared interaction after rechecking every constraint."""
+        row = self.connection.execute(
+            "SELECT * FROM npc_actions WHERE id=? AND character_id=? AND status='available'",
+            (action_id, character_id),
+        ).fetchone()
+        character = self.get_character(character_id)
+        if row is None or character is None or character["location_id"] != row["location_id"]:
+            return False, "Interaction is not currently available."
+        preconditions = json.loads(row["preconditions_json"])
+        if not all(
+            self.get_fact(item["subject_id"], item["predicate"]) == item["equals"]
+            for item in preconditions
+        ):
+            return False, "Interaction is not currently available."
+        effects = json.loads(row["effects_json"])
+        for fact in effects.get("facts", []):
+            self.set_fact(
+                fact["subject_id"], fact["predicate"], fact["value"],
+                hidden=bool(fact.get("hidden", False)),
+            )
+        status = effects.get("simulation_status")
+        if status is not None:
+            if status not in {"active", "succeeded", "failed", "ended"}:
+                raise ValueError(f"Invalid simulation status: {status}")
+            self.connection.execute("UPDATE simulation SET status=? WHERE id=1", (status,))
+        self.connection.execute("UPDATE npc_actions SET status='used' WHERE id=?", (action_id,))
+        return True, str(effects.get("visible_message", f"{row['label']} is complete."))
 
     def pending_activity(self, character_id: str) -> dict[str, Any] | None:
         row=self.connection.execute("SELECT * FROM character_activities WHERE character_id=? AND status='pending'",(character_id,)).fetchone()

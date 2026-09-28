@@ -18,7 +18,8 @@ Use only the supplied NPC context and the player's exact input. Do not claim
 knowledge absent from the context. Return dialogue plus optional proposed
 actions and belief updates in the required schema. Proposals do not change the
 world; the game engine will validate them. Never invent player thoughts,
-dialogue, decisions, or voluntary actions."""
+dialogue, decisions, or voluntary actions. Propose only actions listed in
+available_actions, copying kind and target_id or action_id exactly."""
 
 
 def _build_response_model() -> type[Any]:
@@ -43,9 +44,10 @@ def _build_response_model() -> type[Any]:
     action_model = create_model(
         "ActionProposalModel",
         __config__=strict_config,
-        kind=(Literal["move", "wait"], ...),
+        kind=(Literal["move", "wait", "interact"], ...),
         target_id=(str | None, ...),
         minutes=(int | None, Field(ge=1, le=1_440)),
+        action_id=(str | None, ...),
     )
     return create_model(
         "NPCResponseModel",
@@ -139,6 +141,7 @@ class OpenAIResponsesClient:
                         for key, value in {
                             "target_id": item.target_id,
                             "minutes": item.minutes,
+                            "action_id": getattr(item, "action_id", None),
                         }.items()
                         if value is not None
                     },

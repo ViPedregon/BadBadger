@@ -17,6 +17,8 @@ The current slice includes:
 - bounded NPC decision events that can produce independently validated actions;
 - scenario-generic NPC action affordances derived from the current world graph;
 - JSON scenario loading with persistent, inspectable NPC parameters;
+- engine-validated, scenario-defined NPC interactions with consequential effects;
+- presentation-only appearance profiles for consistent future scene imagery;
 - integer mission time and scheduled event processing;
 - an append-only action/event history; and
 - a disposable two-room prototype created by
@@ -57,6 +59,30 @@ Autonomous decisions also receive only engine-computed `available_actions`.
 For movement, these contain directly connected destinations and authoritative
 travel durations. The backend selects or declines an affordance; the engine
 still validates the proposal and owns all resulting state changes.
+
+## Playable proof scenario: Relay Crisis
+
+`relay_crisis.json` is a short scenario with three NPCs whose goals conflict
+and whose beliefs contain different pieces of the situation. Each has one
+irreversible option, and the first completed option disables the others. Start
+a fresh save with:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m badbadger.cli --save relay-crisis.db --scenario src\badbadger\scenarios\relay_crisis.json
+```
+
+Begin with `examine situation table`, use `npc` and `npc <name>` for debugging,
+and speak naturally to Director Sable, Technician Orr, and Dr. Lin. A compact
+offline path is `go to Relay Chamber`, followed by
+`tell Technician Orr broadcast the distress packet`. With the OpenAI backend,
+ask what each character knows before deciding whom to inform or encourage.
+
+Scenario `appearance` objects establish repeatable character and location
+details for future image prompts. They are descriptive inputs, not hidden truth;
+future renderers should receive only the current visible state and must never
+write facts back to the simulation. Rendering should run asynchronously so it
+cannot pause the game clock or action loop.
 
 Launching it again with the same `--save` path resumes the simulation. The
 current deterministic text interpreter accepts natural-looking forms of the

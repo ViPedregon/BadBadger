@@ -16,6 +16,8 @@ class AutonomyScheduler:
         self.context_builder = NPCContextBuilder(repository)
 
     def process_due(self, call_budget: int = 1) -> list[str]:
+        if self.repository.simulation_status != "active":
+            return []
         messages: list[str] = []
         calls = 0
         # Fetch more than the call budget because occupied NPCs consume no call.
@@ -66,4 +68,6 @@ class AutonomyScheduler:
                     input_data={"event_id": event["id"]},
                     result_data={"degraded": response.degraded, "proposals": results},
                 )
+            if self.repository.simulation_status != "active":
+                break
         return messages

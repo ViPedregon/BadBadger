@@ -12,8 +12,9 @@ from badbadger.db.repository import GameRepository
 class NPCContext:
     npc_id: str
     name: str
-    location: dict[str, str]
-    visible_characters: list[dict[str, str]]
+    appearance: dict[str, Any]
+    location: dict[str, Any]
+    visible_characters: list[dict[str, Any]]
     beliefs: list[dict[str, Any]]
     recent_dialogue: list[dict[str, Any]]
     goals: list[dict[str, Any]]
@@ -34,18 +35,24 @@ class NPCContextBuilder:
         location = self.repository.get_location(npc["location_id"])
         if location is None:
             raise RuntimeError(f"NPC {npc_id} has an unknown location")
-        visible = [
-            {"id": character["id"], "name": character["name"], "kind": character["kind"]}
-            for character in self.repository.characters_at(npc["location_id"])
-            if character["id"] != npc_id
-        ]
+        visible = []
+        for character in self.repository.characters_at(npc["location_id"]):
+            if character["id"] != npc_id:
+                visible.append({
+                    "id": character["id"],
+                    "name": character["name"],
+                    "kind": character["kind"],
+                    "appearance": self.repository.appearance_for(character["id"], "character"),
+                })
         return NPCContext(
             npc_id=npc_id,
             name=npc["name"],
+            appearance=self.repository.appearance_for(npc_id, "character"),
             location={
                 "id": location["id"],
                 "name": location["name"],
                 "description": location["description"],
+                "appearance": self.repository.appearance_for(location["id"], "location"),
             },
             visible_characters=visible,
             beliefs=self.repository.beliefs_for(npc_id),
@@ -60,5 +67,5 @@ class NPCContextBuilder:
                     "duration_minutes": destination["duration_minutes"],
                 }
                 for destination in self.repository.reachable_locations(location["id"])
-            ],
+            ] + self.repository.available_npc_actions(npc_id),
         )

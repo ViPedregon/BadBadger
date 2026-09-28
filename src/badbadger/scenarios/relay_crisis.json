@@ -1,0 +1,131 @@
+{
+  "scenario_id": "relay-crisis-0.1",
+  "locations": [
+    {
+      "id": "operations",
+      "name": "Operations",
+      "description": "A compact coordination room overlooking the relay complex.",
+      "appearance": {
+        "architecture": "low-ceilinged industrial control room",
+        "palette": "slate gray, amber status lights, muted red accents",
+        "lighting": "warm console glow under dim emergency strips",
+        "landmarks": ["central situation table", "reinforced west window"]
+      }
+    },
+    {
+      "id": "relay",
+      "name": "Relay Chamber",
+      "description": "A humming communications chamber built around a tall transmitter core.",
+      "appearance": {
+        "architecture": "cylindrical concrete chamber with steel service gantries",
+        "palette": "cold blue, brushed steel, hazard yellow",
+        "lighting": "pulsing blue equipment light",
+        "landmarks": ["transmitter core", "purge manifold", "broadcast console"]
+      }
+    },
+    {
+      "id": "infirmary",
+      "name": "Infirmary",
+      "description": "A narrow medical bay with sealed cabinets and two empty cots.",
+      "appearance": {
+        "architecture": "sterile modular medical bay",
+        "palette": "off-white, pale green, stainless steel",
+        "lighting": "steady clinical ceiling panels",
+        "landmarks": ["two cots", "sealed medicine cabinets"]
+      }
+    }
+  ],
+  "connections": [
+    {"from": "operations", "to": "relay", "minutes": 2},
+    {"from": "relay", "to": "operations", "minutes": 2},
+    {"from": "operations", "to": "infirmary", "minutes": 2},
+    {"from": "infirmary", "to": "operations", "minutes": 2},
+    {"from": "infirmary", "to": "relay", "minutes": 2},
+    {"from": "relay", "to": "infirmary", "minutes": 2}
+  ],
+  "characters": [
+    {
+      "id": "player", "kind": "player", "name": "Player", "location_id": "operations",
+      "appearance": {"role": "field coordinator", "clothing": "charcoal utility jacket with a plain station badge"}
+    },
+    {
+      "id": "sable", "kind": "npc", "name": "Director Sable", "location_id": "operations",
+      "appearance": {"age": "late fifties", "build": "tall and spare", "hair": "close-cropped silver", "clothing": "dark station coat with a red command stripe"},
+      "parameters": {"temperament": "controlled and security-minded", "risk_tolerance": 0.2, "autonomy_enabled": true, "first_decision_after_minutes": 6, "decision_cooldown_minutes": 3},
+      "goals": [{"description": "Seal the relay before the unstable sample escapes containment.", "priority": 3}],
+      "beliefs": [
+        {"subject_id": "sample", "predicate": "is_unstable", "value": true, "confidence": 0.95},
+        {"subject_id": "rescue", "predicate": "is_listening", "value": false, "confidence": 0.7}
+      ]
+    },
+    {
+      "id": "orr", "kind": "npc", "name": "Technician Orr", "location_id": "relay",
+      "appearance": {"age": "early thirties", "build": "compact", "hair": "black curls under a headset", "clothing": "blue maintenance coveralls with rolled sleeves"},
+      "parameters": {"temperament": "urgent and optimistic", "risk_tolerance": 0.75, "autonomy_enabled": true, "first_decision_after_minutes": 5, "decision_cooldown_minutes": 3},
+      "goals": [{"description": "Broadcast the distress packet while the receiver is listening.", "priority": 3}],
+      "beliefs": [
+        {"subject_id": "rescue", "predicate": "is_listening", "value": true, "confidence": 0.9},
+        {"subject_id": "sample", "predicate": "is_unstable", "value": false, "confidence": 0.55}
+      ]
+    },
+    {
+      "id": "lin", "kind": "npc", "name": "Dr. Lin", "location_id": "infirmary",
+      "appearance": {"age": "forties", "build": "slight", "hair": "long dark hair tied low", "clothing": "pale medical coat over an orange pressure vest"},
+      "parameters": {"temperament": "precise and protective", "risk_tolerance": 0.4, "autonomy_enabled": true, "first_decision_after_minutes": 2, "decision_cooldown_minutes": 3},
+      "goals": [{"description": "Reach the Relay Chamber and purge the sample before it destabilizes.", "priority": 3}],
+      "beliefs": [
+        {"subject_id": "sample", "predicate": "is_unstable", "value": true, "confidence": 0.85},
+        {"subject_id": "purge", "predicate": "will_destroy_research", "value": true, "confidence": 1.0}
+      ]
+    }
+  ],
+  "facts": [
+    {"subject_id": "crisis", "predicate": "resolved", "value": false, "hidden": true},
+    {"subject_id": "crisis", "predicate": "outcome", "value": "undecided", "hidden": true},
+    {"subject_id": "situation_table", "predicate": "description", "value": "The display shows three live controls: relay lockdown, distress broadcast, and sample purge. Activating any one will disable the other two."}
+  ],
+  "npc_actions": [
+    {
+      "id": "sable_seal_relay", "character_id": "sable", "location_id": "operations",
+      "label": "Seal the relay",
+      "description": "Trigger the irreversible relay lockdown from Operations.",
+      "preconditions": [{"subject_id": "crisis", "predicate": "resolved", "equals": false}],
+      "effects": {
+        "facts": [
+          {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
+          {"subject_id": "crisis", "predicate": "outcome", "value": "relay_sealed", "hidden": true}
+        ],
+        "simulation_status": "ended",
+        "visible_message": "Director Sable seals the relay. The transmitter falls silent behind armored shutters; the sample remains contained, but no distress call leaves the station."
+      }
+    },
+    {
+      "id": "orr_broadcast", "character_id": "orr", "location_id": "relay",
+      "label": "Broadcast the distress packet",
+      "description": "Use the transmitter's remaining power to call the listening rescue ship.",
+      "preconditions": [{"subject_id": "crisis", "predicate": "resolved", "equals": false}],
+      "effects": {
+        "facts": [
+          {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
+          {"subject_id": "crisis", "predicate": "outcome", "value": "distress_broadcast", "hidden": true}
+        ],
+        "simulation_status": "ended",
+        "visible_message": "Orr broadcasts the distress packet. A rescue acknowledgment returns, but the energized relay leaves the unstable sample unsecured."
+      }
+    },
+    {
+      "id": "lin_purge_sample", "character_id": "lin", "location_id": "relay",
+      "label": "Purge the sample",
+      "description": "Vent the sample into the sterilization chamber, destroying it and the research it contains.",
+      "preconditions": [{"subject_id": "crisis", "predicate": "resolved", "equals": false}],
+      "effects": {
+        "facts": [
+          {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
+          {"subject_id": "crisis", "predicate": "outcome", "value": "sample_purged", "hidden": true}
+        ],
+        "simulation_status": "ended",
+        "visible_message": "Dr. Lin purges the sample. The contamination risk vanishes with years of research, while the relay remains available for a later rescue attempt."
+      }
+    }
+  ]
+}

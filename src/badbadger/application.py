@@ -70,6 +70,7 @@ class GameApplication:
             f"[{location['name']}]",
             location["description"],
             f"Mission time: {self.repository.current_time} minutes.",
+            f"Mission status: {self.repository.simulation_status}.",
         ]
 
     def handle(self, raw_input: str) -> tuple[list[str], bool]:
@@ -92,6 +93,8 @@ class GameApplication:
             return self.inspect_npc(text[4:].strip()), False
         if lowered.startswith("inspect npc "):
             return self.inspect_npc(text[12:].strip()), False
+        if self.repository.simulation_status != "active":
+            return ["This mission has ended. Start a new save to play again."], False
 
         context = self._intent_context()
         intent = self.local_interpreter.interpret(context, text)
@@ -171,6 +174,7 @@ class GameApplication:
             f"NPC: {npc['name']} ({npc['id']})",
             f"Location: {location['name'] if location else npc['location_id']}",
             f"Activity: {activity['kind'] if activity else 'idle'}",
+            f"Appearance: {self.repository.appearance_for(npc['id'], 'character')!r}",
             "Parameters:",
         ]
         lines.extend(

@@ -2,6 +2,16 @@ from badbadger.agents.npc import ActionProposal
 from badbadger.db.repository import GameRepository
 
 def resolve_npc_proposal(repo: GameRepository, npc_id: str, proposal: ActionProposal) -> tuple[bool,str]:
+    if proposal.kind == "interact":
+        action_id = proposal.parameters.get("action_id")
+        if not isinstance(action_id, str):
+            return False, "Invalid interaction."
+        accepted, message = repo.apply_npc_action(npc_id, action_id)
+        npc = repo.get_character(npc_id)
+        player = repo.get_player()
+        if accepted and npc and npc["location_id"] != player["location_id"]:
+            message = ""
+        return accepted, message
     if proposal.kind != "move": return False,"Unsupported NPC action."
     npc=repo.get_character(npc_id); destination=proposal.parameters.get("target_id")
     if not npc or not isinstance(destination,str) or not repo.get_location(destination): return False,"Invalid destination."

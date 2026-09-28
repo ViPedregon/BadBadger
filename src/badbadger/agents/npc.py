@@ -44,23 +44,54 @@ class DeterministicNPCBackend:
         lowered = player_input.lower()
         if "engine decision tick" in lowered:
             goals = " ".join(goal["description"] for goal in context.goals).lower()
-            destination = next(
+            selected = next(
                 (
                     action
                     for action in context.available_actions
-                    if action["target_id"].lower() in goals
-                    or action["target_name"].lower() in goals
+                    if (
+                        action["kind"] == "move"
+                        and (
+                            action["target_id"].lower() in goals
+                            or action["target_name"].lower() in goals
+                        )
+                    )
+                    or (
+                        action["kind"] == "interact"
+                        and action["label"].lower() in goals
+                    )
                 ),
                 None,
             )
-            if destination is not None:
+            if selected is not None:
+                if selected["kind"] == "interact":
+                    return NPCResponse(
+                        f"I choose to {selected['label'].lower()}.",
+                        proposed_actions=[
+                            ActionProposal("interact", {"action_id": selected["id"]})
+                        ],
+                    )
                 return NPCResponse(
-                    f"I will pursue my goal in {destination['target_name']}.",
+                    f"I will pursue my goal in {selected['target_name']}.",
                     proposed_actions=[
-                        ActionProposal("move", {"target_id": destination["target_id"]})
+                        ActionProposal("move", {"target_id": selected["target_id"]})
                     ],
                 )
             return NPCResponse("I have no useful action to take right now.")
+        interaction = next(
+            (
+                action for action in context.available_actions
+                if action["kind"] == "interact"
+                and all(word in lowered for word in action["label"].lower().split())
+            ),
+            None,
+        )
+        if interaction is not None:
+            return NPCResponse(
+                f"I'll {interaction['label'].lower()}.",
+                proposed_actions=[
+                    ActionProposal("interact", {"action_id": interaction["id"]})
+                ],
+            )
         if "room b" in lowered and any(word in lowered for word in ("go", "move", "check")):
             return NPCResponse("I'll go check Room B.", proposed_actions=[ActionProposal("move", {"target_id":"room_b"})])
         if "room b" in lowered and "safe" in lowered:
