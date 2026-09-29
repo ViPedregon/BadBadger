@@ -77,6 +77,8 @@ and speak naturally to Director Sable, Technician Orr, and Dr. Lin. A compact
 offline path is `go to Relay Chamber`, followed by
 `tell Technician Orr broadcast the distress packet`. With the OpenAI backend,
 ask what each character knows before deciding whom to inform or encourage.
+The opening decision schedule leaves enough time to question multiple NPCs;
+ordinary information requests cannot authorize an irreversible interaction.
 
 Scenario `appearance` objects establish repeatable character and location
 details for future image prompts. They are descriptive inputs, not hidden truth;

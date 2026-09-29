@@ -51,7 +51,7 @@
     {
       "id": "sable", "kind": "npc", "name": "Director Sable", "location_id": "operations",
       "appearance": {"age": "late fifties", "build": "tall and spare", "hair": "close-cropped silver", "clothing": "dark station coat with a red command stripe"},
-      "parameters": {"temperament": "controlled and security-minded", "risk_tolerance": 0.2, "autonomy_enabled": true, "first_decision_after_minutes": 6, "decision_cooldown_minutes": 3},
+      "parameters": {"temperament": "controlled and security-minded", "risk_tolerance": 0.2, "autonomy_enabled": true, "first_decision_after_minutes": 14, "decision_cooldown_minutes": 3},
       "goals": [{"description": "Seal the relay before the unstable sample escapes containment.", "priority": 3}],
       "beliefs": [
         {"subject_id": "sample", "predicate": "is_unstable", "value": true, "confidence": 0.95},
@@ -61,7 +61,7 @@
     {
       "id": "orr", "kind": "npc", "name": "Technician Orr", "location_id": "relay",
       "appearance": {"age": "early thirties", "build": "compact", "hair": "black curls under a headset", "clothing": "blue maintenance coveralls with rolled sleeves"},
-      "parameters": {"temperament": "urgent and optimistic", "risk_tolerance": 0.75, "autonomy_enabled": true, "first_decision_after_minutes": 5, "decision_cooldown_minutes": 3},
+      "parameters": {"temperament": "urgent and optimistic", "risk_tolerance": 0.75, "autonomy_enabled": true, "first_decision_after_minutes": 12, "decision_cooldown_minutes": 3},
       "goals": [{"description": "Broadcast the distress packet while the receiver is listening.", "priority": 3}],
       "beliefs": [
         {"subject_id": "rescue", "predicate": "is_listening", "value": true, "confidence": 0.9},
@@ -71,7 +71,7 @@
     {
       "id": "lin", "kind": "npc", "name": "Dr. Lin", "location_id": "infirmary",
       "appearance": {"age": "forties", "build": "slight", "hair": "long dark hair tied low", "clothing": "pale medical coat over an orange pressure vest"},
-      "parameters": {"temperament": "precise and protective", "risk_tolerance": 0.4, "autonomy_enabled": true, "first_decision_after_minutes": 2, "decision_cooldown_minutes": 3},
+      "parameters": {"temperament": "precise and protective", "risk_tolerance": 0.4, "autonomy_enabled": true, "first_decision_after_minutes": 8, "decision_cooldown_minutes": 3},
       "goals": [{"description": "Reach the Relay Chamber and purge the sample before it destabilizes.", "priority": 3}],
       "beliefs": [
         {"subject_id": "sample", "predicate": "is_unstable", "value": true, "confidence": 0.85},

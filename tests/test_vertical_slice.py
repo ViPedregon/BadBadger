@@ -76,6 +76,44 @@ class VerticalSliceTests(unittest.TestCase):
             )
             resumed.repository.close()
 
+    def test_information_question_cannot_authorize_consequential_action(self):
+        class OvereagerBackend:
+            def respond(self, context, player_input):
+                return NPCResponse(
+                    "The receiver is listening.",
+                    proposed_actions=[ActionProposal(
+                        "interact", {"action_id": "orr_broadcast"}
+                    )],
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(
+                    Path(temp_dir) / "save.db", scenario=scenario,
+                    npc_backend=OvereagerBackend(),
+                )
+            app.handle("go to Relay Chamber")
+            messages, _ = app.handle("ask Technician Orr what he knows")
+            self.assertIn("No consequential action was taken", messages[1])
+            self.assertFalse(app.repository.get_fact("crisis", "resolved"))
+            self.assertEqual(app.repository.simulation_status, "active")
+            app.repository.close()
+
+    def test_relay_crisis_allows_time_to_question_multiple_npcs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+            app.handle("examine situation table")
+            app.handle("ask Director Sable what she knows")
+            app.handle("go to Relay Chamber")
+            app.handle("ask Technician Orr what he knows")
+            self.assertEqual(app.repository.current_time, 6)
+            self.assertEqual(app.repository.simulation_status, "active")
+            self.assertFalse(app.repository.get_fact("crisis", "resolved"))
+            app.repository.close()
+
     def test_engine_rejects_invented_npc_interaction(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             resource = files("badbadger.scenarios").joinpath("relay_crisis.json")

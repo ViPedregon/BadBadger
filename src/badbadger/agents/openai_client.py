@@ -19,7 +19,11 @@ knowledge absent from the context. Return dialogue plus optional proposed
 actions and belief updates in the required schema. Proposals do not change the
 world; the game engine will validate them. Never invent player thoughts,
 dialogue, decisions, or voluntary actions. Propose only actions listed in
-available_actions, copying kind and target_id or action_id exactly."""
+available_actions, copying kind and target_id or action_id exactly. During a
+player conversation, propose an interaction only when the player's exact input
+explicitly asks the NPC to perform it; questions and requests for information
+must return no action. An ENGINE DECISION TICK is autonomous and may select an
+action without player permission."""
 
 
 def _build_response_model() -> type[Any]:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from badbadger.agents.context import NPCContextBuilder
 from badbadger.agents.npc import NPCBackend, NPCResponse
 from badbadger.db.repository import GameRepository
@@ -34,9 +36,22 @@ class DialogueService:
                 event_messages=[]
                 proposal_results=[]
                 for proposal in response.proposed_actions:
-                    accepted,message=resolve_npc_proposal(self.repository,npc_id,proposal)
+                    if proposal.kind == "interact" and not self._interaction_requested(
+                        context.available_actions, proposal.parameters.get("action_id"),
+                        player_input,
+                    ):
+                        accepted = False
+                        message = (
+                            "(No consequential action was taken; explicitly request "
+                            "the interaction if you want it performed.)"
+                        )
+                    else:
+                        accepted,message=resolve_npc_proposal(
+                            self.repository,npc_id,proposal
+                        )
                     proposal_results.append({"accepted":accepted,"proposal":proposal.__dict__})
-                    if message: event_messages=[message]
+                    if message:
+                        event_messages.append(message)
                 for proposal in response.belief_updates:
                     self.repository.set_belief(
                         npc_id,
@@ -67,6 +82,26 @@ class DialogueService:
                 },
             )
         return [f"{npc['name']}: \"{response.dialogue}\"", *event_messages]
+
+    @staticmethod
+    def _interaction_requested(
+        available_actions: list[dict[str, object]],
+        action_id: object,
+        player_input: str,
+    ) -> bool:
+        """Require the declared action label to appear in the player's own words."""
+        action = next(
+            (
+                item for item in available_actions
+                if item.get("kind") == "interact" and item.get("id") == action_id
+            ),
+            None,
+        )
+        if action is None:
+            return False
+        words = set(re.findall(r"[a-z0-9]+", player_input.lower()))
+        label_words = set(re.findall(r"[a-z0-9]+", str(action["label"]).lower()))
+        return bool(label_words) and label_words.issubset(words)
 
     @staticmethod
     def _validate_response(response: NPCResponse) -> None:
