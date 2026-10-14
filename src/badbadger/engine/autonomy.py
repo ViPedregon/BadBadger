@@ -49,14 +49,16 @@ class AutonomyScheduler:
             request = (
                 "ENGINE DECISION TICK: Based only on your goals and knowledge, "
                 "propose at most one useful action from available_actions. Copy its "
-                "kind and target_id exactly; otherwise propose no action."
+                "kind and all applicable id fields exactly; otherwise propose no action."
             )
             response = self.backend.respond(context, request)
             with self.repository.transaction():
                 results = []
                 if not response.degraded:
                     for proposal in response.proposed_actions[:1]:
-                        accepted, message = resolve_npc_proposal(self.repository, npc_id, proposal)
+                        accepted, message = resolve_npc_proposal(
+                            self.repository, npc_id, proposal, allow_social=True
+                        )
                         results.append({"accepted": accepted, "proposal": proposal.__dict__})
                         if message:
                             messages.append(message)

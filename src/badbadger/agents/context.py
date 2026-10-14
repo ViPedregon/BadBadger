@@ -75,5 +75,7 @@ class NPCContextBuilder:
                     "duration_minutes": destination["duration_minutes"],
                 }
                 for destination in self.repository.reachable_locations(location["id"])
-            ] + self.repository.available_npc_actions(npc_id),
+            ] + self.repository.available_npc_actions(
+                npc_id
+            ) + self.repository.available_social_actions(npc_id),
         )

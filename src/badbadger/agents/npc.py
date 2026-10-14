@@ -91,6 +91,22 @@ class DeterministicNPCBackend:
                         ActionProposal("move", {"target_id": selected["target_id"]})
                     ],
                 )
+            social = next(
+                (
+                    action for action in context.available_actions
+                    if action["kind"] == "share_belief"
+                ),
+                None,
+            )
+            if social is not None:
+                return NPCResponse(
+                    f"I will share what I know with {social['target_name']}.",
+                    proposed_actions=[ActionProposal("share_belief", {
+                        "target_id": social["target_id"],
+                        "subject_id": social["subject_id"],
+                        "predicate": social["predicate"],
+                    })],
+                )
             return NPCResponse("I have no useful action to take right now.")
         interaction = next(
             (

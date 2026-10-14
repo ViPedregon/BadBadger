@@ -405,6 +405,123 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertEqual(backend.context.available_actions[0]["target_id"], "room_b")
             app.repository.close()
 
+    def test_offscreen_npcs_share_beliefs_and_evolve_relationships(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "social.json"
+            source.write_text(json.dumps({
+                "scenario_id": "autonomous_social_test",
+                "locations": [
+                    {"id": "lobby", "name": "Lobby", "description": "A lobby."},
+                    {"id": "lab", "name": "Lab", "description": "A lab."},
+                ],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player",
+                     "location_id": "lobby"},
+                    {"id": "source", "kind": "npc", "name": "Source",
+                     "location_id": "lab",
+                     "parameters": {"first_decision_after_minutes": 1},
+                     "beliefs": [{"subject_id": "signal", "predicate": "is_real",
+                                  "value": True, "confidence": 0.9}]},
+                    {"id": "listener", "kind": "npc", "name": "Listener",
+                     "location_id": "lab", "parameters": {"autonomy_enabled": False}},
+                ],
+            }), encoding="utf-8")
+            database = Path(temp_dir) / "save.db"
+            app = open_prototype(database, scenario=source)
+
+            context = NPCContextBuilder(app.repository).build("source")
+            social = next(
+                action for action in context.available_actions
+                if action["kind"] == "share_belief"
+            )
+            self.assertEqual(social["target_id"], "listener")
+            messages, _ = app.handle("wait 1")
+            self.assertNotIn("Source", " ".join(messages))
+            learned = next(
+                belief for belief in app.repository.beliefs_for("listener")
+                if belief["subject_id"] == "signal"
+            )
+            self.assertTrue(learned["value"])
+            self.assertAlmostEqual(learned["confidence"], 0.72)
+            relationship = app.repository.relationships_for("listener")[0]
+            self.assertEqual(relationship["target_id"], "source")
+            self.assertAlmostEqual(relationship["trust"], 0.04)
+            self.assertIn("Source told Listener", app.repository.memories_for("listener")[0]["summary"])
+            self.assertFalse(any(
+                belief["subject_id"] == "signal"
+                for belief in app.repository.beliefs_for("player")
+            ))
+            app.repository.close()
+
+            resumed = open_prototype(database)
+            self.assertTrue(any(
+                belief["subject_id"] == "signal"
+                for belief in resumed.repository.beliefs_for("listener")
+            ))
+            resumed.repository.close()
+
+    def test_player_overhears_visible_npc_information_exchange(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = create_prototype(Path(temp_dir) / "save.db")
+            with engine.repository.transaction():
+                engine.repository.add_character("listener", "npc", "Listener", "room_a")
+                accepted, message = engine.repository.share_belief(
+                    "npc", "listener", "room_b", "is_safe"
+                )
+            self.assertTrue(accepted)
+            self.assertIn("Observer tells Listener", message)
+            player_belief = next(
+                belief for belief in engine.repository.beliefs_for("player")
+                if belief["subject_id"] == "room_b"
+            )
+            self.assertTrue(player_belief["value"])
+            engine.repository.close()
+
+    def test_conflicting_npc_information_damages_trust_without_forcing_belief(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = create_prototype(Path(temp_dir) / "save.db")
+            with engine.repository.transaction():
+                engine.repository.add_character("listener", "npc", "Listener", "room_a")
+                engine.repository.set_belief(
+                    "listener", "room_b", "is_safe", False, 0.95,
+                    source_type="initial",
+                )
+                accepted, _ = engine.repository.share_belief(
+                    "npc", "listener", "room_b", "is_safe"
+                )
+            self.assertTrue(accepted)
+            resolved = next(
+                belief for belief in engine.repository.beliefs_for("listener")
+                if belief["subject_id"] == "room_b"
+            )
+            self.assertFalse(resolved["value"])
+            relationship = engine.repository.relationships_for("listener")[0]
+            self.assertAlmostEqual(relationship["trust"], -0.05)
+            self.assertAlmostEqual(relationship["affinity"], -0.03)
+            engine.repository.close()
+
+    def test_dialogue_backend_cannot_force_npc_social_action(self):
+        class SocialBackend:
+            def respond(self, context, player_input):
+                return NPCResponse(
+                    "I will tell Listener.",
+                    proposed_actions=[ActionProposal("share_belief", {
+                        "target_id": "listener",
+                        "subject_id": "room_b",
+                        "predicate": "is_safe",
+                    })],
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = create_prototype(Path(temp_dir) / "save.db")
+            with engine.repository.transaction():
+                engine.repository.add_character("listener", "npc", "Listener", "room_a")
+            service = DialogueService(engine.repository, SocialBackend())
+            messages = service.converse("npc", "Tell Listener what you know.")
+            self.assertTrue(any("only available" in item for item in messages))
+            self.assertEqual(engine.repository.beliefs_for("listener"), [])
+            engine.repository.close()
+
     def test_npc_parameters_are_inspectable_without_hidden_facts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = open_prototype(Path(temp_dir) / "save.db")

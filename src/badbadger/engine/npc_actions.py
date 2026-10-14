@@ -7,7 +7,20 @@ def resolve_npc_proposal(
     proposal: ActionProposal,
     *,
     requested_by_player: bool = False,
+    allow_social: bool = False,
 ) -> tuple[bool,str]:
+    if proposal.kind == "share_belief":
+        if not allow_social:
+            return False, "Social actions are only available during autonomous decisions."
+        target_id = proposal.parameters.get("target_id")
+        subject_id = proposal.parameters.get("subject_id")
+        predicate = proposal.parameters.get("predicate")
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (target_id, subject_id, predicate)
+        ):
+            return False, "Invalid social action."
+        return repo.share_belief(npc_id, target_id, subject_id, predicate)
     if proposal.kind == "interact":
         action_id = proposal.parameters.get("action_id")
         if not isinstance(action_id, str):

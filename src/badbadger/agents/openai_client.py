@@ -28,7 +28,8 @@ Relationship changes describe this NPC's own attitude and must be small,
 justified reactions to the current exchange. Proposals do not change the
 world; the game engine will validate them. Never invent player thoughts,
 dialogue, decisions, or voluntary actions. Propose only actions listed in
-available_actions, copying kind and target_id or action_id exactly. During a
+available_actions, copying every applicable id field exactly. A share_belief
+action may be selected only during an ENGINE DECISION TICK. During a
 conversation, available_disclosures contains safe topic metadata but never the
 private content. When the player asks about one of those topics, copy its id
 into a disclosure request; never invent or state the withheld content yourself.
@@ -60,10 +61,12 @@ def _build_response_model() -> type[Any]:
     action_model = create_model(
         "ActionProposalModel",
         __config__=strict_config,
-        kind=(Literal["move", "wait", "interact"], ...),
+        kind=(Literal["move", "wait", "interact", "share_belief"], ...),
         target_id=(str | None, ...),
         minutes=(int | None, Field(ge=1, le=1_440)),
         action_id=(str | None, ...),
+        subject_id=(str | None, ...),
+        predicate=(str | None, ...),
     )
     relationship_model = create_model(
         "RelationshipProposalModel",
@@ -173,6 +176,8 @@ class OpenAIResponsesClient:
                             "target_id": item.target_id,
                             "minutes": item.minutes,
                             "action_id": getattr(item, "action_id", None),
+                            "subject_id": getattr(item, "subject_id", None),
+                            "predicate": getattr(item, "predicate", None),
                         }.items()
                         if value is not None
                     },

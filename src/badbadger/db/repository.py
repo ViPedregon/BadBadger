@@ -289,6 +289,131 @@ class GameRepository:
                 })
         return actions
 
+    def available_social_actions(
+        self, character_id: str, limit: int = 8
+    ) -> list[dict[str, Any]]:
+        """Offer bounded, non-secret belief sharing with co-located NPCs."""
+        speaker = self.get_character(character_id)
+        if speaker is None or speaker["kind"] != "npc":
+            return []
+        actions: list[dict[str, Any]] = []
+        beliefs = self.beliefs_for(character_id)
+        targets = [
+            item for item in self.characters_at(speaker["location_id"], kind="npc")
+            if item["id"] != character_id
+        ]
+        for target in targets:
+            target_beliefs = {
+                (item["subject_id"], item["predicate"]): item
+                for item in self.beliefs_for(target["id"])
+            }
+            for belief in beliefs:
+                existing = target_beliefs.get(
+                    (belief["subject_id"], belief["predicate"])
+                )
+                shared_confidence = float(belief["confidence"]) * 0.8
+                if (
+                    existing is not None
+                    and existing["value"] == belief["value"]
+                    and float(existing["confidence"]) >= shared_confidence
+                ):
+                    continue
+                actions.append({
+                    "kind": "share_belief",
+                    "target_id": target["id"],
+                    "target_name": target["name"],
+                    "subject_id": belief["subject_id"],
+                    "predicate": belief["predicate"],
+                })
+                if len(actions) >= limit:
+                    return actions
+        return actions
+
+    def share_belief(
+        self,
+        speaker_id: str,
+        target_id: str,
+        subject_id: str,
+        predicate: str,
+    ) -> tuple[bool, str]:
+        """Validate and resolve one NPC-to-NPC information exchange."""
+        speaker = self.get_character(speaker_id)
+        target = self.get_character(target_id)
+        if (
+            speaker is None
+            or target is None
+            or speaker["kind"] != "npc"
+            or target["kind"] != "npc"
+            or speaker_id == target_id
+            or not speaker["active"]
+            or not target["active"]
+            or speaker["location_id"] != target["location_id"]
+        ):
+            return False, "The social target is unavailable."
+        belief = next(
+            (
+                item for item in self.beliefs_for(speaker_id)
+                if item["subject_id"] == subject_id and item["predicate"] == predicate
+            ),
+            None,
+        )
+        if belief is None:
+            return False, "The NPC does not hold that belief."
+        existing = next(
+            (
+                item for item in self.beliefs_for(target_id)
+                if item["subject_id"] == subject_id and item["predicate"] == predicate
+            ),
+            None,
+        )
+        confidence = float(belief["confidence"]) * 0.8
+        if (
+            existing is not None
+            and existing["value"] == belief["value"]
+            and float(existing["confidence"]) >= confidence
+        ):
+            return False, "The target already holds that belief."
+        conflict = existing is not None and existing["value"] != belief["value"]
+        self.set_belief(
+            target_id, subject_id, predicate, belief["value"], confidence,
+            source_type="hearsay", source_character_id=speaker_id,
+            detail=f"Shared directly by {speaker['name']}.",
+        )
+        summary = (
+            f"{speaker['name']} told {target['name']} that "
+            f"{subject_id}.{predicate} is {belief['value']!r}."
+        )
+        for character_id in (speaker_id, target_id):
+            self.add_memory(
+                character_id, speaker["location_id"], "npc_conversation", summary,
+                salience=0.6, subject_id=subject_id,
+                source_character_id=speaker_id,
+            )
+        trust_delta, affinity_delta = ((-0.05, -0.03) if conflict else (0.04, 0.02))
+        self.adjust_relationship(
+            target_id, speaker_id, trust_delta, affinity_delta,
+            "The NPC received conflicting information." if conflict
+            else "The NPC received useful information.",
+        )
+        player = self.get_player()
+        visible = player["location_id"] == speaker["location_id"]
+        if visible:
+            self.set_belief(
+                player["id"], subject_id, predicate, belief["value"], confidence,
+                source_type="hearsay", source_character_id=speaker_id,
+                detail=f"Overheard {speaker['name']} speaking to {target['name']}.",
+            )
+        self.record(
+            "npc_social_interaction", actor_id=speaker_id,
+            input_data={
+                "target_id": target_id, "subject_id": subject_id,
+                "predicate": predicate,
+            },
+            result_data={"accepted": True, "conflict": conflict},
+        )
+        message = f"{speaker['name']} tells {target['name']}: {subject_id}.{predicate} is {belief['value']!r}."
+        return True, message if visible else ""
+
     def apply_npc_action(
         self, character_id: str, action_id: str, *, requested_by_player: bool = False
     ) -> tuple[bool, str]:

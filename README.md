@@ -15,6 +15,7 @@ The current slice includes:
 - persistent, character-scoped episodic memories from witnessed events;
 - directional NPC trust and affinity with an append-only change history;
 - trust-gated private disclosures and requested NPC cooperation;
+- autonomous, engine-validated NPC-to-NPC belief sharing;
 - append-only belief evidence with source provenance and deterministic
   contradiction resolution;
 - bounded NPC decision events that can produce independently validated actions;
@@ -127,6 +128,14 @@ and records the information as a sourced player belief. Scenario interactions
 can separately require player trust when requested in dialogue, while the same
 NPC remains free to choose that action autonomously. The NPC inspector reports
 each topic as `withheld`, `available`, or `shared` without printing its content.
+
+On autonomous decision ticks, co-located NPCs may also select bounded
+`share_belief` affordances. The engine rechecks that the speaker actually owns
+the belief and that the listener is present, records hearsay evidence and
+episodic memories, and adjusts the listener's relationship toward the speaker.
+Protected disclosure content is never included in these affordances. Offscreen
+exchanges produce no player narration or knowledge; a player in the room hears
+the exchange and gains corresponding hearsay evidence.
 
 ## Optional OpenAI NPC dialogue
 
