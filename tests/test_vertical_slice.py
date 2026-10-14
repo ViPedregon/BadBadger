@@ -14,6 +14,7 @@ from badbadger.agents.npc import (
     DeterministicNPCBackend,
     FallbackNPCBackend,
     NPCResponse,
+    RelationshipProposal,
 )
 from badbadger.agents.openai_client import OpenAIResponsesClient
 from badbadger.agents.openai_intent import OpenAIIntentInterpreter
@@ -26,6 +27,90 @@ from badbadger.scenarios.loader import ScenarioError, load_scenario
 
 
 class VerticalSliceTests(unittest.TestCase):
+    def test_relay_crisis_relationships_are_directional_and_private(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+            sable = NPCContextBuilder(app.repository).build("sable")
+            orr = NPCContextBuilder(app.repository).build("orr")
+            sable_to_orr = next(
+                item for item in sable.relationships if item["target_id"] == "orr"
+            )
+            orr_to_sable = next(
+                item for item in orr.relationships if item["target_id"] == "sable"
+            )
+            self.assertEqual(sable_to_orr["trust"], -0.35)
+            self.assertEqual(orr_to_sable["trust"], -0.2)
+            self.assertNotIn("Orr hopes", repr(sable.relationships))
+            app.repository.close()
+
+    def test_relationship_update_is_bounded_persistent_and_inspectable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Path(temp_dir) / "save.db"
+            app = open_prototype(database)
+            messages, _ = app.handle("tell Observer thank you")
+            self.assertIn("welcome", messages[0].lower())
+            relationship = app.repository.relationships_for("npc")[0]
+            self.assertAlmostEqual(relationship["trust"], 0.1)
+            self.assertAlmostEqual(relationship["affinity"], 0.05)
+            self.assertEqual(
+                relationship["recent_changes"][-1]["source_type"], "dialogue"
+            )
+            app.repository.close()
+
+            resumed = open_prototype(database)
+            relationship = resumed.repository.relationships_for("npc")[0]
+            self.assertAlmostEqual(relationship["trust"], 0.1)
+            with self.assertRaisesRegex(ValueError, "limited to 0.25"):
+                resumed.repository.adjust_relationship(
+                    "npc", "player", 0.3, 0, "Too large for one exchange."
+                )
+            resumed.repository.set_relationship(
+                "npc", "player", 0.9, 0.9, reason="Near the upper limit."
+            )
+            bounded = resumed.repository.adjust_relationship(
+                "npc", "player", 0.25, 0.25, "A strongly positive exchange."
+            )
+            self.assertEqual(bounded, {"trust": 1.0, "affinity": 1.0})
+            inspected, _ = resumed.handle("npc Observer")
+            self.assertIn("Player: trust=1.00, affinity=1.00", inspected[0])
+            resumed.repository.close()
+
+    def test_relationship_update_cannot_target_absent_character(self):
+        class InventingBackend:
+            def respond(self, context, player_input):
+                return NPCResponse(
+                    "I have reconsidered Orr.",
+                    relationship_updates=[RelationshipProposal(
+                        "orr", 0.2, 0.2, "An unsupported remote reassessment."
+                    )],
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(
+                    Path(temp_dir) / "save.db", scenario=scenario,
+                    npc_backend=InventingBackend(),
+                )
+            before = next(
+                item for item in app.repository.relationships_for("sable")
+                if item["target_id"] == "orr"
+            )
+            app.handle("ask Director Sable about Orr")
+            after = next(
+                item for item in app.repository.relationships_for("sable")
+                if item["target_id"] == "orr"
+            )
+            self.assertEqual(after["trust"], before["trust"])
+            record = app.repository.connection.execute(
+                "SELECT result_json FROM history WHERE record_type='dialogue_resolved' "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            self.assertIn('"accepted": false', record["result_json"])
+            app.repository.close()
+
     def test_witnessed_memory_is_scoped_persistent_and_in_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             database = Path(temp_dir) / "save.db"
@@ -537,6 +622,10 @@ class VerticalSliceTests(unittest.TestCase):
                             confidence=0.8,
                         )
                     ],
+                    relationship_updates=[SimpleNamespace(
+                        target_id="player", trust_delta=0.1,
+                        affinity_delta=0.05, reason="A helpful exchange.",
+                    )],
                 )
                 return SimpleNamespace(output_parsed=parsed)
 
@@ -565,6 +654,8 @@ class VerticalSliceTests(unittest.TestCase):
                 {"action_id": "declared_action"},
             )
             self.assertTrue(result.belief_updates[0].value)
+            self.assertEqual(result.relationship_updates[0].target_id, "player")
+            self.assertEqual(result.relationship_updates[0].trust_delta, 0.1)
             call = responses.calls[0]
             self.assertEqual(call["model"], "test-model")
             self.assertIs(call["text_format"], object)

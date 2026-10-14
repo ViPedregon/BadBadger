@@ -53,6 +53,11 @@
       "appearance": {"age": "late fifties", "build": "tall and spare", "hair": "close-cropped silver", "clothing": "dark station coat with a red command stripe"},
       "parameters": {"temperament": "controlled and security-minded", "risk_tolerance": 0.2, "autonomy_enabled": true, "first_decision_after_minutes": 14, "decision_cooldown_minutes": 3},
       "goals": [{"description": "Seal the relay before the unstable sample escapes containment.", "priority": 3}],
+      "relationships": [
+        {"target_id": "player", "trust": 0.1, "affinity": 0.0, "reason": "Sable has not yet judged the field coordinator under pressure."},
+        {"target_id": "orr", "trust": -0.35, "affinity": -0.1, "reason": "Sable considers Orr talented but dangerously impulsive."},
+        {"target_id": "lin", "trust": 0.45, "affinity": 0.2, "reason": "Sable respects Lin's careful technical judgment."}
+      ],
       "beliefs": [
         {"subject_id": "sample", "predicate": "is_unstable", "value": true, "confidence": 0.95},
         {"subject_id": "rescue", "predicate": "is_listening", "value": false, "confidence": 0.7}
@@ -63,6 +68,11 @@
       "appearance": {"age": "early thirties", "build": "compact", "hair": "black curls under a headset", "clothing": "blue maintenance coveralls with rolled sleeves"},
       "parameters": {"temperament": "urgent and optimistic", "risk_tolerance": 0.75, "autonomy_enabled": true, "first_decision_after_minutes": 12, "decision_cooldown_minutes": 3},
       "goals": [{"description": "Broadcast the distress packet while the receiver is listening.", "priority": 3}],
+      "relationships": [
+        {"target_id": "player", "trust": 0.25, "affinity": 0.15, "reason": "Orr hopes the field coordinator will support a rescue attempt."},
+        {"target_id": "sable", "trust": -0.2, "affinity": -0.15, "reason": "Orr believes Sable's caution may strand the crew."},
+        {"target_id": "lin", "trust": 0.3, "affinity": 0.1, "reason": "Orr trusts Lin's science even when they disagree about priorities."}
+      ],
       "beliefs": [
         {"subject_id": "rescue", "predicate": "is_listening", "value": true, "confidence": 0.9},
         {"subject_id": "sample", "predicate": "is_unstable", "value": false, "confidence": 0.55}
@@ -73,6 +83,11 @@
       "appearance": {"age": "forties", "build": "slight", "hair": "long dark hair tied low", "clothing": "pale medical coat over an orange pressure vest"},
       "parameters": {"temperament": "precise and protective", "risk_tolerance": 0.4, "autonomy_enabled": true, "first_decision_after_minutes": 8, "decision_cooldown_minutes": 3},
       "goals": [{"description": "Reach the Relay Chamber and purge the sample before it destabilizes.", "priority": 3}],
+      "relationships": [
+        {"target_id": "player", "trust": 0.0, "affinity": 0.05, "reason": "Lin is waiting to see whether the field coordinator acts responsibly."},
+        {"target_id": "sable", "trust": 0.4, "affinity": 0.15, "reason": "Lin trusts Sable to take containment seriously."},
+        {"target_id": "orr", "trust": 0.15, "affinity": 0.2, "reason": "Lin likes Orr but doubts his appetite for risk."}
+      ],
       "beliefs": [
         {"subject_id": "sample", "predicate": "is_unstable", "value": true, "confidence": 0.85},
         {"subject_id": "purge", "predicate": "will_destroy_research", "value": true, "confidence": 1.0}

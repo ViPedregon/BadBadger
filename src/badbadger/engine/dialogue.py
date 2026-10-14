@@ -63,6 +63,30 @@ class DialogueService:
                         source_character_id=player["id"],
                         detail=player_input,
                     )
+                relationship_results = []
+                visible_ids = {
+                    character["id"] for character in context.visible_characters
+                }
+                for proposal in response.relationship_updates:
+                    if proposal.target_id not in visible_ids:
+                        relationship_results.append({
+                            "accepted": False,
+                            "proposal": proposal.__dict__,
+                            "reason": "Target is not visible to the NPC.",
+                        })
+                        continue
+                    values = self.repository.adjust_relationship(
+                        npc_id,
+                        proposal.target_id,
+                        proposal.trust_delta,
+                        proposal.affinity_delta,
+                        proposal.reason,
+                    )
+                    relationship_results.append({
+                        "accepted": True,
+                        "proposal": proposal.__dict__,
+                        "result": values,
+                    })
                 # A successful exchange advances time, then normal events run.
                 self.repository.advance_time(1)
                 event_messages.extend(process_due_events(self.repository))
@@ -78,6 +102,9 @@ class DialogueService:
                     "dialogue": response.dialogue,
                     "degraded": response.degraded,
                     "belief_updates": [item.__dict__ for item in response.belief_updates],
+                    "relationship_updates": (
+                        relationship_results if not response.degraded else []
+                    ),
                     "action_proposals": proposal_results if not response.degraded else [],
                 },
             )
@@ -112,3 +139,22 @@ class DialogueService:
                 raise ValueError("Belief proposals require a subject and predicate")
             if not 0 <= proposal.confidence <= 1:
                 raise ValueError("Belief confidence must be between zero and one")
+        for proposal in response.relationship_updates:
+            if (
+                not isinstance(proposal.target_id, str)
+                or not proposal.target_id.strip()
+                or not isinstance(proposal.reason, str)
+                or not proposal.reason.strip()
+            ):
+                raise ValueError("Relationship proposals require a target and reason")
+            if (
+                not isinstance(proposal.trust_delta, (int, float))
+                or isinstance(proposal.trust_delta, bool)
+                or not isinstance(proposal.affinity_delta, (int, float))
+                or isinstance(proposal.affinity_delta, bool)
+            ):
+                raise ValueError("Relationship changes must be numeric")
+            if not -0.25 <= proposal.trust_delta <= 0.25:
+                raise ValueError("Trust changes are limited to 0.25 per exchange")
+            if not -0.25 <= proposal.affinity_delta <= 0.25:
+                raise ValueError("Affinity changes are limited to 0.25 per exchange")

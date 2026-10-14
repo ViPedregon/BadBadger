@@ -13,6 +13,7 @@ The current slice includes:
 - deterministic movement, examination, and waiting;
 - persistent NPC dialogue with character-scoped context and beliefs;
 - persistent, character-scoped episodic memories from witnessed events;
+- directional NPC trust and affinity with an append-only change history;
 - append-only belief evidence with source provenance and deterministic
   contradiction resolution;
 - bounded NPC decision events that can produce independently validated actions;
@@ -109,6 +110,13 @@ at the interaction's location. NPC context retrieves at most eight memories,
 ordered by salience and then recency. Observation text is explicitly authored
 as visible information; hidden fact payloads are never converted into memories
 or exposed automatically. Use `npc <name>` to inspect the resulting memory view.
+
+Relationships are private to the observing NPC: Sable's trust in Orr is
+separate from Orr's trust in Sable. Scenario files can define starting `trust`
+and `affinity` values from -1 to 1. An NPC backend may propose small changes
+during dialogue, but the engine accepts at most ±0.25 per exchange, requires a
+reason, and rejects targets the NPC cannot currently see. Relationship state
+and its change history persist in SQLite and are available through `npc <name>`.
 
 ## Optional OpenAI NPC dialogue
 

@@ -20,6 +20,14 @@ class BeliefProposal:
 
 
 @dataclass(frozen=True)
+class RelationshipProposal:
+    target_id: str
+    trust_delta: float
+    affinity_delta: float
+    reason: str
+
+
+@dataclass(frozen=True)
 class ActionProposal:
     kind: str
     parameters: dict[str, Any] = field(default_factory=dict)
@@ -30,6 +38,7 @@ class NPCResponse:
     dialogue: str
     proposed_actions: list[ActionProposal] = field(default_factory=list)
     belief_updates: list[BeliefProposal] = field(default_factory=list)
+    relationship_updates: list[RelationshipProposal] = field(default_factory=list)
     degraded: bool = False
 
 
@@ -116,6 +125,23 @@ class DeterministicNPCBackend:
                     BeliefProposal("room_b", "lights_on", False, confidence=0.7)
                 ],
             )
+
+        if any(phrase in lowered for phrase in ("thank you", "thanks")):
+            player = next(
+                (
+                    character for character in context.visible_characters
+                    if character["kind"] == "player"
+                ),
+                None,
+            )
+            if player is not None:
+                return NPCResponse(
+                    "You're welcome.",
+                    relationship_updates=[RelationshipProposal(
+                        player["id"], 0.1, 0.05,
+                        "The player expressed sincere appreciation.",
+                    )],
+                )
 
         if any(word in lowered for word in ("hello", "hi", "talk", "speak")):
             return NPCResponse("Hello. What would you like to discuss?")

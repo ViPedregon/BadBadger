@@ -147,6 +147,32 @@ CREATE TABLE IF NOT EXISTS memories (
     source_character_id TEXT REFERENCES characters(id)
 );
 
+CREATE TABLE IF NOT EXISTS relationships (
+    observer_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    target_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    trust REAL NOT NULL DEFAULT 0 CHECK(trust >= -1 AND trust <= 1),
+    affinity REAL NOT NULL DEFAULT 0 CHECK(affinity >= -1 AND affinity <= 1),
+    updated_at_game_time INTEGER NOT NULL,
+    PRIMARY KEY(observer_id, target_id),
+    CHECK(observer_id <> target_id)
+);
+
+CREATE TABLE IF NOT EXISTS relationship_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    observer_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    game_time INTEGER NOT NULL,
+    source_type TEXT NOT NULL CHECK(source_type IN ('initial', 'dialogue')),
+    trust_delta REAL NOT NULL,
+    affinity_delta REAL NOT NULL,
+    reason TEXT NOT NULL,
+    FOREIGN KEY(observer_id, target_id)
+        REFERENCES relationships(observer_id, target_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS relationship_events_by_pair
+ON relationship_events(observer_id, target_id, id DESC);
+
 CREATE INDEX IF NOT EXISTS memories_by_character
 ON memories(character_id, salience DESC, game_time DESC, id DESC);
 

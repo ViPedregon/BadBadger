@@ -57,6 +57,33 @@ def _validate(data: dict[str, Any]) -> None:
             raise ScenarioError(f"Appearance for character {item['id']} must be an object")
     if sum(item["kind"] == "player" for item in characters) != 1:
         raise ScenarioError("Scenario must define exactly one player")
+    for item in characters:
+        relationships = item.get("relationships", [])
+        if not isinstance(relationships, list):
+            raise ScenarioError(f"Relationships for {item['id']} must be a list")
+        for relationship in relationships:
+            if not isinstance(relationship, dict):
+                raise ScenarioError(f"Invalid relationship for {item['id']}")
+            target_id = relationship.get("target_id")
+            if target_id not in character_ids or target_id == item["id"]:
+                raise ScenarioError(f"Invalid relationship target for {item['id']}")
+            for key in ("trust", "affinity"):
+                value = relationship.get(key, 0.0)
+                if (
+                    not isinstance(value, (int, float))
+                    or isinstance(value, bool)
+                    or not -1 <= value <= 1
+                ):
+                    raise ScenarioError(
+                        f"Relationship {key} for {item['id']} must be between -1 and 1"
+                    )
+            reason = relationship.get(
+                "reason", "Scenario-defined starting relationship."
+            )
+            if not isinstance(reason, str) or not reason.strip():
+                raise ScenarioError(
+                    f"Relationship reason for {item['id']} must be non-empty text"
+                )
     for connection in data.get("connections", []):
         if not isinstance(connection, dict):
             raise ScenarioError("Each connection must be an object")
@@ -145,6 +172,16 @@ def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
                     decision_after = item.get("parameters", {}).get("first_decision_after_minutes")
                     if isinstance(decision_after, int):
                         repository.ensure_decision_event(item["id"], decision_after)
+            for item in characters:
+                for relationship in item.get("relationships", []):
+                    repository.set_relationship(
+                        item["id"], relationship["target_id"],
+                        float(relationship.get("trust", 0.0)),
+                        float(relationship.get("affinity", 0.0)),
+                        reason=relationship.get(
+                            "reason", "Scenario-defined starting relationship."
+                        ),
+                    )
             for fact in data.get("facts", []):
                 repository.set_fact(fact["subject_id"], fact["predicate"], fact["value"], hidden=fact.get("hidden", False))
             for action in data.get("npc_actions", []):

@@ -8,7 +8,12 @@ import logging
 from typing import Any, Literal
 
 from badbadger.agents.context import NPCContext
-from badbadger.agents.npc import ActionProposal, BeliefProposal, NPCResponse
+from badbadger.agents.npc import (
+    ActionProposal,
+    BeliefProposal,
+    NPCResponse,
+    RelationshipProposal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +21,9 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = """You portray one NPC in a deterministic role-playing simulation.
 Use only the supplied NPC context and the player's exact input. Do not claim
 knowledge absent from the context. Return dialogue plus optional proposed
-actions and belief updates in the required schema. Proposals do not change the
+actions, belief updates, and relationship updates in the required schema.
+Relationship changes describe this NPC's own attitude and must be small,
+justified reactions to the current exchange. Proposals do not change the
 world; the game engine will validate them. Never invent player thoughts,
 dialogue, decisions, or voluntary actions. Propose only actions listed in
 available_actions, copying kind and target_id or action_id exactly. During a
@@ -53,12 +60,21 @@ def _build_response_model() -> type[Any]:
         minutes=(int | None, Field(ge=1, le=1_440)),
         action_id=(str | None, ...),
     )
+    relationship_model = create_model(
+        "RelationshipProposalModel",
+        __config__=strict_config,
+        target_id=(str, Field(min_length=1)),
+        trust_delta=(float, Field(ge=-0.25, le=0.25)),
+        affinity_delta=(float, Field(ge=-0.25, le=0.25)),
+        reason=(str, Field(min_length=1, max_length=500)),
+    )
     return create_model(
         "NPCResponseModel",
         __config__=strict_config,
         dialogue=(str, Field(min_length=1, max_length=2_000)),
         proposed_actions=(list[action_model], ...),
         belief_updates=(list[belief_model], ...),
+        relationship_updates=(list[relationship_model], ...),
     )
 
 
@@ -160,5 +176,14 @@ class OpenAIResponsesClient:
                     item.confidence,
                 )
                 for item in parsed.belief_updates
+            ],
+            relationship_updates=[
+                RelationshipProposal(
+                    item.target_id,
+                    item.trust_delta,
+                    item.affinity_delta,
+                    item.reason,
+                )
+                for item in getattr(parsed, "relationship_updates", [])
             ],
         )

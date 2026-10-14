@@ -207,6 +207,15 @@ class GameApplication:
         )
         if not memories:
             lines.append("  (none)")
+        lines.append("Relationships:")
+        relationships = self.repository.relationships_for(npc["id"])
+        lines.extend(
+            f"  {relationship['target_name']}: trust={relationship['trust']:.2f}, "
+            f"affinity={relationship['affinity']:.2f}"
+            for relationship in relationships
+        )
+        if not relationships:
+            lines.append("  (none)")
         return ["\n".join(lines)]
 
 

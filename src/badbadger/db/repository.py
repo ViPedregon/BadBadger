@@ -284,6 +284,142 @@ class GameRepository:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def set_relationship(
+        self,
+        observer_id: str,
+        target_id: str,
+        trust: float,
+        affinity: float,
+        *,
+        reason: str = "Scenario-defined starting relationship.",
+    ) -> None:
+        if (
+            not isinstance(trust, (int, float))
+            or isinstance(trust, bool)
+            or not isinstance(affinity, (int, float))
+            or isinstance(affinity, bool)
+        ):
+            raise ValueError("Relationship values must be numeric")
+        if observer_id == target_id:
+            raise ValueError("A character cannot have a relationship with itself")
+        if not -1 <= trust <= 1 or not -1 <= affinity <= 1:
+            raise ValueError("Relationship values must be between -1 and 1")
+        if self.get_character(observer_id) is None or self.get_character(target_id) is None:
+            raise ValueError("Relationships require known characters")
+        self.connection.execute(
+            """
+            INSERT INTO relationships(
+                observer_id, target_id, trust, affinity, updated_at_game_time
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(observer_id, target_id) DO UPDATE SET
+                trust=excluded.trust,
+                affinity=excluded.affinity,
+                updated_at_game_time=excluded.updated_at_game_time
+            """,
+            (observer_id, target_id, trust, affinity, self.current_time),
+        )
+        self.connection.execute(
+            """
+            INSERT INTO relationship_events(
+                observer_id, target_id, game_time, source_type,
+                trust_delta, affinity_delta, reason
+            ) VALUES (?, ?, ?, 'initial', ?, ?, ?)
+            """,
+            (observer_id, target_id, self.current_time, trust, affinity, reason),
+        )
+
+    def adjust_relationship(
+        self,
+        observer_id: str,
+        target_id: str,
+        trust_delta: float,
+        affinity_delta: float,
+        reason: str,
+    ) -> dict[str, Any]:
+        if (
+            not isinstance(trust_delta, (int, float))
+            or isinstance(trust_delta, bool)
+            or not isinstance(affinity_delta, (int, float))
+            or isinstance(affinity_delta, bool)
+        ):
+            raise ValueError("Relationship changes must be numeric")
+        if not -0.25 <= trust_delta <= 0.25 or not -0.25 <= affinity_delta <= 0.25:
+            raise ValueError("Relationship changes are limited to 0.25 per exchange")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("Relationship changes require a reason")
+        row = self.connection.execute(
+            "SELECT trust, affinity FROM relationships WHERE observer_id=? AND target_id=?",
+            (observer_id, target_id),
+        ).fetchone()
+        if row is None:
+            if observer_id == target_id:
+                raise ValueError("A character cannot have a relationship with itself")
+            if self.get_character(observer_id) is None or self.get_character(target_id) is None:
+                raise ValueError("Relationships require known characters")
+            self.connection.execute(
+                """
+                INSERT INTO relationships(
+                    observer_id, target_id, trust, affinity, updated_at_game_time
+                ) VALUES (?, ?, 0, 0, ?)
+                """,
+                (observer_id, target_id, self.current_time),
+            )
+            row = self.connection.execute(
+                "SELECT trust, affinity FROM relationships WHERE observer_id=? AND target_id=?",
+                (observer_id, target_id),
+            ).fetchone()
+        trust = max(-1.0, min(1.0, float(row["trust"]) + trust_delta))
+        affinity = max(-1.0, min(1.0, float(row["affinity"]) + affinity_delta))
+        self.connection.execute(
+            """
+            UPDATE relationships
+            SET trust=?, affinity=?, updated_at_game_time=?
+            WHERE observer_id=? AND target_id=?
+            """,
+            (trust, affinity, self.current_time, observer_id, target_id),
+        )
+        self.connection.execute(
+            """
+            INSERT INTO relationship_events(
+                observer_id, target_id, game_time, source_type,
+                trust_delta, affinity_delta, reason
+            ) VALUES (?, ?, ?, 'dialogue', ?, ?, ?)
+            """,
+            (
+                observer_id, target_id, self.current_time,
+                trust_delta, affinity_delta, reason,
+            ),
+        )
+        return {"trust": trust, "affinity": affinity}
+
+    def relationships_for(self, observer_id: str) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """
+            SELECT r.target_id, c.name AS target_name, r.trust, r.affinity,
+                   r.updated_at_game_time
+            FROM relationships AS r
+            JOIN characters AS c ON c.id = r.target_id
+            WHERE r.observer_id=?
+            ORDER BY r.target_id
+            """,
+            (observer_id,),
+        ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            events = self.connection.execute(
+                """
+                SELECT game_time, source_type, trust_delta, affinity_delta, reason
+                FROM relationship_events
+                WHERE observer_id=? AND target_id=?
+                ORDER BY id DESC LIMIT 5
+                """,
+                (observer_id, row["target_id"]),
+            ).fetchall()
+            item["recent_changes"] = [dict(event) for event in reversed(events)]
+            result.append(item)
+        return result
+
     def pending_activity(self, character_id: str) -> dict[str, Any] | None:
         row=self.connection.execute("SELECT * FROM character_activities WHERE character_id=? AND status='pending'",(character_id,)).fetchone()
         return dict(row) if row else None
