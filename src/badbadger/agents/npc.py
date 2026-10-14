@@ -58,6 +58,20 @@ class DeterministicNPCBackend:
     def respond(self, context: NPCContext, player_input: str) -> NPCResponse:
         lowered = player_input.lower()
         if "engine decision tick" in lowered:
+            speech = next(
+                (
+                    action for action in context.available_actions
+                    if action["kind"] == "speak"
+                ),
+                None,
+            )
+            if speech is not None:
+                return NPCResponse(
+                    f"Here's where things stand: {speech['summary']}",
+                    proposed_actions=[ActionProposal(
+                        "speak", {"cue_id": speech["cue_id"]}
+                    )],
+                )
             goals = " ".join(
                 goal["description"]
                 for goal in context.goals if goal.get("status", "active") == "active"

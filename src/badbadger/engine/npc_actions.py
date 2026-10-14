@@ -8,8 +8,17 @@ def resolve_npc_proposal(
     *,
     requested_by_player: bool = False,
     allow_social: bool = False,
+    allow_proactive: bool = False,
     autonomous: bool = False,
+    spoken_text: str | None = None,
 ) -> tuple[bool,str]:
+    if proposal.kind == "speak":
+        if not allow_proactive or spoken_text is None:
+            return False, "Proactive speech is only available during NPC decisions."
+        cue_id = proposal.parameters.get("cue_id")
+        if not isinstance(cue_id, int) or isinstance(cue_id, bool):
+            return False, "Invalid speech cue."
+        return repo.speak_reaction(npc_id, cue_id, spoken_text)
     if proposal.kind == "share_belief":
         if not allow_social:
             return False, "Social actions are only available during autonomous decisions."

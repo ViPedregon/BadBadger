@@ -77,5 +77,7 @@ class NPCContextBuilder:
                 for destination in self.repository.reachable_locations(location["id"])
             ] + self.repository.available_npc_actions(
                 npc_id
+            ) + self.repository.available_speech_actions(
+                npc_id
             ) + self.repository.available_social_actions(npc_id),
         )

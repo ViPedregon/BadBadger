@@ -151,6 +151,17 @@ Protected disclosure content is never included in these affordances. Offscreen
 exchanges produce no player narration or knowledge; a player in the room hears
 the exchange and gains corresponding hearsay evidence.
 
+NPCs can also react aloud to engine-authored cues such as a character arriving,
+a goal resolving, or a substantial relationship change. These cues contain
+only the visible summary selected by the deterministic engine, expire if they
+are no longer timely, and become a `speak` affordance only while the player and
+NPC share a location. The engine treats the model's dialogue as audible only
+when it accompanies that exact cue id, then persists the utterance as dialogue
+and a memory for everyone present. Reaction-only turns cannot move, interact,
+or change relationships, and `proactive_speech_cooldown_minutes` (default 3)
+keeps repeated reactions from becoming chatter. A reaction does not postpone
+the NPC's regular autonomy schedule.
+
 Scenario actions may define a base decision score, a minimum autonomous score,
 and modifiers based on resolved beliefs, inspectable NPC parameters, or scoped
 episodic memories. Parameter factors support exact matches and numeric `gte` or

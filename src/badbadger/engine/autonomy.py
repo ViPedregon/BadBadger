@@ -23,6 +23,7 @@ class AutonomyScheduler:
         # Fetch more than the call budget because occupied NPCs consume no call.
         for event in self.repository.due_decision_events(max(8, call_budget)):
             npc_id = event["payload"]["npc_id"]
+            reaction_only = bool(event["payload"].get("reaction_only", False))
             npc = self.repository.get_character(npc_id)
             activity = self.repository.pending_activity(npc_id)
             parameters = self.repository.npc_parameters(npc_id)
@@ -39,8 +40,12 @@ class AutonomyScheduler:
             if not npc or not npc["active"] or activity:
                 with self.repository.transaction():
                     self.repository.mark_event_processed(event["id"])
-                    next_time = activity["due_time"] if activity else self.repository.current_time + cooldown
-                    self.repository.ensure_decision_event(npc_id, next_time)
+                    if not reaction_only:
+                        next_time = (
+                            activity["due_time"] if activity
+                            else self.repository.current_time + cooldown
+                        )
+                        self.repository.ensure_decision_event(npc_id, next_time)
                 continue
             if calls >= call_budget:
                 break
@@ -49,22 +54,37 @@ class AutonomyScheduler:
             request = (
                 "ENGINE DECISION TICK: Based only on your goals and knowledge, "
                 "propose at most one useful action from available_actions. Copy its "
-                "kind and all applicable id fields exactly; otherwise propose no action."
+                "kind and all applicable id fields exactly; otherwise propose no action. "
+                "If a speak action is available, prioritize one speak action and use "
+                "dialogue as the exact short utterance the player will hear."
             )
             response = self.backend.respond(context, request)
             with self.repository.transaction():
                 results = []
                 if not response.degraded:
                     for proposal in response.proposed_actions[:1]:
+                        if reaction_only and proposal.kind != "speak":
+                            results.append({
+                                "accepted": False,
+                                "proposal": proposal.__dict__,
+                                "reason": "Reaction events allow only speech.",
+                            })
+                            continue
                         accepted, message = resolve_npc_proposal(
                             self.repository, npc_id, proposal,
-                            allow_social=True, autonomous=True,
+                            allow_social=not reaction_only,
+                            allow_proactive=True,
+                            autonomous=True,
+                            spoken_text=response.dialogue,
                         )
                         results.append({"accepted": accepted, "proposal": proposal.__dict__})
                         if message:
                             messages.append(message)
                 self.repository.mark_event_processed(event["id"])
-                self.repository.ensure_decision_event(npc_id, self.repository.current_time + cooldown)
+                if not reaction_only:
+                    self.repository.ensure_decision_event(
+                        npc_id, self.repository.current_time + cooldown
+                    )
                 self.repository.record(
                     "npc_decision",
                     actor_id=npc_id,
@@ -81,6 +101,15 @@ class AutonomyScheduler:
                             }
                             for action in context.available_actions
                             if action["kind"] == "interact"
+                        ],
+                        "reaction_context": [
+                            {
+                                "cue_id": action["cue_id"],
+                                "trigger_kind": action["trigger_kind"],
+                                "salience": action["salience"],
+                            }
+                            for action in context.available_actions
+                            if action["kind"] == "speak"
                         ],
                     },
                 )

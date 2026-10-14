@@ -23,6 +23,9 @@ def _arrival(repository: GameRepository, payload: dict[str, Any]) -> str:
     activity=repository.connection.execute("SELECT * FROM character_activities WHERE id=?",(payload['activity_id'],)).fetchone()
     if not activity or activity['status']!='pending': return ""
     repository.move_character(payload['character_id'],payload['destination_id'])
+    repository.queue_arrival_reactions(
+        payload["character_id"], payload["destination_id"]
+    )
     repository.connection.execute("UPDATE character_activities SET status='completed' WHERE id=?",(payload['activity_id'],))
     actor=repository.get_character(payload['character_id']); player=repository.get_player()
     return f"{actor['name']} arrives." if player['location_id']==payload['destination_id'] else ""

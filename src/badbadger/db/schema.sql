@@ -228,5 +228,23 @@ ON relationship_action_events(observer_id, target_id, id DESC);
 CREATE INDEX IF NOT EXISTS memories_by_character
 ON memories(character_id, salience DESC, game_time DESC, id DESC);
 
+CREATE TABLE IF NOT EXISTS npc_reaction_cues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    npc_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    created_time INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    trigger_kind TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    salience REAL NOT NULL DEFAULT 0.5 CHECK(salience >= 0 AND salience <= 1),
+    source_character_id TEXT REFERENCES characters(id),
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','spoken','expired')),
+    spoken_at INTEGER,
+    utterance TEXT
+);
+
+CREATE INDEX IF NOT EXISTS reaction_cues_by_npc
+ON npc_reaction_cues(npc_id, status, salience DESC, created_time DESC, id DESC);
+
 CREATE INDEX IF NOT EXISTS dialogue_by_npc
 ON dialogue(npc_id, id);

@@ -128,10 +128,16 @@ class VerticalSliceTests(unittest.TestCase):
 
             orr_memories = app.repository.memories_for("orr")
             lin_memories = app.repository.memories_for("lin")
-            self.assertEqual(len(orr_memories), 1)
-            self.assertEqual(len(lin_memories), 1)
-            self.assertIn("rescue acknowledgment", lin_memories[0]["summary"])
-            self.assertEqual(lin_memories[0]["source_character_id"], "orr")
+            self.assertEqual(len([
+                item for item in orr_memories
+                if item["memory_kind"] == "witnessed_action"
+            ]), 1)
+            witnessed = next(
+                item for item in lin_memories
+                if item["memory_kind"] == "witnessed_action"
+            )
+            self.assertIn("rescue acknowledgment", witnessed["summary"])
+            self.assertEqual(witnessed["source_character_id"], "orr")
             self.assertEqual(app.repository.memories_for("sable"), [])
             self.assertNotIn("crisis", repr(lin_memories))
             app.repository.close()
@@ -1023,6 +1029,129 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertEqual(app.repository.get_character("npc")["location_id"], "room_a")
             app.handle("wait 5")
             self.assertEqual(app.repository.get_character("npc")["location_id"], "room_b")
+            app.repository.close()
+
+    def test_player_arrival_triggers_persistent_audible_npc_reaction(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(
+                    Path(temp_dir) / "save.db", scenario=scenario
+                )
+            messages, _ = app.handle("go to Relay Chamber")
+            self.assertTrue(any("Here's where things stand" in item for item in messages))
+            self.assertTrue(any("Player arrived" in item for item in messages))
+            self.assertFalse(app.repository.get_fact("crisis", "resolved"))
+
+            cue = app.repository.connection.execute(
+                "SELECT status,utterance FROM npc_reaction_cues "
+                "WHERE npc_id='orr' AND trigger_kind='character_arrived'"
+            ).fetchone()
+            self.assertEqual(cue["status"], "spoken")
+            self.assertIn("Player arrived", cue["utterance"])
+            recent = app.repository.recent_dialogue("orr")
+            self.assertEqual(recent[-1]["speaker_id"], "orr")
+            player_memory = next(
+                item for item in app.repository.memories_for("player")
+                if item["memory_kind"] == "overheard_dialogue"
+            )
+            self.assertIn("Player arrived", player_memory["summary"])
+            regular_decision = app.repository.connection.execute(
+                "SELECT due_time FROM scheduled_events "
+                "WHERE event_type='npc_decision' AND status='pending' "
+                "AND json_extract(payload_json,'$.npc_id')='orr' "
+                "AND json_extract(payload_json,'$.reaction_only') IS NULL"
+            ).fetchone()
+            self.assertEqual(regular_decision["due_time"], 12)
+            app.repository.close()
+
+    def test_proactive_speech_is_rate_limited_and_cues_expire(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "speech.json"
+            source.write_text(json.dumps({
+                "scenario_id": "speech-test",
+                "locations": [
+                    {"id": "lab", "name": "Lab", "description": "A lab."},
+                ],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player",
+                     "location_id": "lab"},
+                    {"id": "npc", "kind": "npc", "name": "Speaker",
+                     "location_id": "lab", "parameters": {
+                         "proactive_speech_cooldown_minutes": 3,
+                     }},
+                ],
+            }), encoding="utf-8")
+            app = open_prototype(Path(temp_dir) / "save.db", scenario=source)
+            with app.repository.transaction():
+                app.repository.queue_reaction(
+                    "npc", "warning", "The first warning matters.", salience=0.9
+                )
+                app.repository.queue_reaction(
+                    "npc", "update", "The second update can wait.", salience=0.8
+                )
+            first = app.autonomy.process_due(call_budget=1)
+            self.assertEqual(len(first), 1)
+            self.assertIn("first warning", first[0])
+            self.assertEqual(app.autonomy.process_due(call_budget=1), [])
+
+            with app.repository.transaction():
+                app.repository.queue_reaction(
+                    "npc", "late_update", "A new update arrived during cooldown.",
+                    salience=0.7,
+                )
+            next_reaction = app.repository.connection.execute(
+                "SELECT MIN(due_time) AS due_time FROM scheduled_events "
+                "WHERE event_type='npc_decision' AND status='pending' "
+                "AND json_extract(payload_json,'$.npc_id')='npc' "
+                "AND json_extract(payload_json,'$.reaction_only')=1"
+            ).fetchone()
+            self.assertEqual(next_reaction["due_time"], 3)
+
+            with app.repository.transaction():
+                app.repository.advance_time(2)
+            self.assertEqual(app.repository.available_speech_actions("npc"), [])
+            with app.repository.transaction():
+                app.repository.advance_time(1)
+            second = app.autonomy.process_due(call_budget=1)
+            self.assertEqual(len(second), 1)
+            self.assertIn("second update", second[0])
+
+            with app.repository.transaction():
+                app.repository.queue_reaction(
+                    "npc", "stale", "This should expire.", lifetime_minutes=1
+                )
+                app.repository.advance_time(2)
+            self.assertFalse(any(
+                item["trigger_kind"] == "stale"
+                for item in app.repository.available_speech_actions("npc")
+            ))
+            app.repository.close()
+
+    def test_reaction_only_turn_cannot_execute_consequential_action(self):
+        class UnsafeReactionBackend:
+            def respond(self, context, player_input):
+                return NPCResponse(
+                    "I will act instead of speaking.",
+                    proposed_actions=[ActionProposal(
+                        "interact", {"action_id": "orr_broadcast"}
+                    )],
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(
+                    Path(temp_dir) / "save.db", scenario=scenario,
+                    npc_backend=UnsafeReactionBackend(),
+                )
+            app.handle("go to Relay Chamber")
+            self.assertFalse(app.repository.get_fact("crisis", "resolved"))
+            record = app.repository.connection.execute(
+                "SELECT result_json FROM history WHERE record_type='npc_decision' "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            self.assertIn("Reaction events allow only speech", record["result_json"])
             app.repository.close()
 
     def test_deterministic_autonomy_prefers_highest_scored_goal_action(self):

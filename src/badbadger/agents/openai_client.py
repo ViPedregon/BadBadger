@@ -30,7 +30,10 @@ world; the game engine will validate them. Never invent player thoughts,
 dialogue, decisions, or voluntary actions. Propose only actions listed in
 available_actions, copying every applicable id field exactly. A share_belief
 action may be selected only during an ENGINE DECISION TICK. During a decision
-tick, do not select an action whose autonomous_eligible value is false. During a
+tick, do not select an action whose autonomous_eligible value is false. A speak
+action may be selected only during an ENGINE DECISION TICK and must copy its
+cue_id exactly; when selected, dialogue is the short utterance heard by the
+player. Without a speak action, decision-tick dialogue is not audible. During a
 conversation, available_disclosures contains safe topic metadata but never the
 private content. When the player asks about one of those topics, copy its id
 into a disclosure request; never invent or state the withheld content yourself.
@@ -62,12 +65,13 @@ def _build_response_model() -> type[Any]:
     action_model = create_model(
         "ActionProposalModel",
         __config__=strict_config,
-        kind=(Literal["move", "wait", "interact", "share_belief"], ...),
+        kind=(Literal["move", "wait", "interact", "share_belief", "speak"], ...),
         target_id=(str | None, ...),
         minutes=(int | None, Field(ge=1, le=1_440)),
         action_id=(str | None, ...),
         subject_id=(str | None, ...),
         predicate=(str | None, ...),
+        cue_id=(int | None, Field(ge=1)),
     )
     relationship_model = create_model(
         "RelationshipProposalModel",
@@ -179,6 +183,7 @@ class OpenAIResponsesClient:
                             "action_id": getattr(item, "action_id", None),
                             "subject_id": getattr(item, "subject_id", None),
                             "predicate": getattr(item, "predicate", None),
+                            "cue_id": getattr(item, "cue_id", None),
                         }.items()
                         if value is not None
                     },

@@ -68,6 +68,9 @@ class SimulationEngine:
         if duration is None:
             return ActionOutcome(False,["There is no route to that destination."])
         self.repository.move_character(player["id"], action.destination_id)
+        self.repository.queue_arrival_reactions(
+            player["id"], action.destination_id
+        )
         return ActionOutcome(
             True,
             [f"You travel to {destination['name']}."],

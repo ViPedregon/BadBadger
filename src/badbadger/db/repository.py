@@ -674,6 +674,167 @@ class GameRepository:
         )
         return int(cursor.lastrowid)
 
+    def queue_reaction(
+        self,
+        npc_id: str,
+        trigger_kind: str,
+        summary: str,
+        *,
+        salience: float = 0.5,
+        source_character_id: str | None = None,
+        lifetime_minutes: int = 10,
+    ) -> int:
+        npc = self.get_character(npc_id)
+        if npc is None or npc["kind"] != "npc":
+            raise ValueError(f"Reaction cues require an NPC: {npc_id}")
+        if not trigger_kind.strip() or not summary.strip():
+            raise ValueError("Reaction cues require a kind and summary")
+        if not 0 <= salience <= 1 or lifetime_minutes < 1:
+            raise ValueError("Invalid reaction cue salience or lifetime")
+        cursor = self.connection.execute(
+            "INSERT INTO npc_reaction_cues("
+            "npc_id,created_time,expires_at,trigger_kind,summary,salience,"
+            "source_character_id) VALUES (?,?,?,?,?,?,?)",
+            (
+                npc_id, self.current_time, self.current_time + lifetime_minutes,
+                trigger_kind, summary, salience, source_character_id,
+            ),
+        )
+        player = self.get_player()
+        if player["location_id"] == npc["location_id"]:
+            self.expedite_decision_event(npc_id)
+        return int(cursor.lastrowid)
+
+    def available_speech_actions(self, npc_id: str) -> list[dict[str, Any]]:
+        npc = self.get_character(npc_id)
+        player = self.get_player()
+        if npc is None or npc["location_id"] != player["location_id"]:
+            return []
+        parameters = self.npc_parameters(npc_id)
+        cooldown = parameters.get("proactive_speech_cooldown_minutes", 3)
+        if not isinstance(cooldown, int) or isinstance(cooldown, bool) or cooldown < 1:
+            cooldown = 3
+        last = self.connection.execute(
+            "SELECT MAX(spoken_at) AS spoken_at FROM npc_reaction_cues "
+            "WHERE npc_id=? AND status='spoken'",
+            (npc_id,),
+        ).fetchone()["spoken_at"]
+        if last is not None and self.current_time - int(last) < cooldown:
+            return []
+        rows = self.connection.execute(
+            "SELECT id,trigger_kind,summary,salience,source_character_id "
+            "FROM npc_reaction_cues WHERE npc_id=? AND status='pending' "
+            "AND expires_at>=? ORDER BY salience DESC,created_time DESC,id DESC LIMIT 3",
+            (npc_id, self.current_time),
+        ).fetchall()
+        return [
+            {
+                "kind": "speak",
+                "cue_id": int(row["id"]),
+                "trigger_kind": row["trigger_kind"],
+                "summary": row["summary"],
+                "salience": float(row["salience"]),
+                "source_character_id": row["source_character_id"],
+            }
+            for row in rows
+        ]
+
+    def speak_reaction(
+        self, npc_id: str, cue_id: int, utterance: str
+    ) -> tuple[bool, str]:
+        available = {
+            item["cue_id"]: item for item in self.available_speech_actions(npc_id)
+        }
+        cue = available.get(cue_id)
+        npc = self.get_character(npc_id)
+        if cue is None or npc is None:
+            return False, "That reaction is no longer available."
+        spoken = " ".join(utterance.split())
+        if not spoken or len(spoken) > 500:
+            return False, "The proposed speech is invalid."
+        self.connection.execute(
+            "UPDATE npc_reaction_cues SET status='spoken',spoken_at=?,utterance=? "
+            "WHERE id=? AND npc_id=? AND status='pending'",
+            (self.current_time, spoken, cue_id, npc_id),
+        )
+        self.append_dialogue(npc_id, npc_id, spoken)
+        for witness in self.characters_at(npc["location_id"]):
+            if witness["id"] == npc_id:
+                continue
+            self.add_memory(
+                witness["id"], npc["location_id"], "overheard_dialogue",
+                f'{npc["name"]} said: "{spoken}"',
+                salience=float(cue["salience"]),
+                source_character_id=npc_id,
+            )
+        self.record(
+            "npc_spoke",
+            actor_id=npc_id,
+            input_data={"cue_id": cue_id, "trigger_kind": cue["trigger_kind"]},
+            result_data={"utterance": spoken},
+        )
+        remaining = self.connection.execute(
+            "SELECT 1 FROM npc_reaction_cues WHERE npc_id=? AND status='pending' "
+            "AND expires_at>=? LIMIT 1",
+            (npc_id, self.current_time),
+        ).fetchone()
+        if remaining is not None:
+            parameters = self.npc_parameters(npc_id)
+            cooldown = parameters.get("proactive_speech_cooldown_minutes", 3)
+            if not isinstance(cooldown, int) or isinstance(cooldown, bool) or cooldown < 1:
+                cooldown = 3
+            self.schedule_event(
+                "npc_decision", self.current_time + cooldown,
+                {"npc_id": npc_id, "reaction_only": True},
+            )
+        return True, f'{npc["name"]}: "{spoken}"'
+
+    def queue_arrival_reactions(self, character_id: str, location_id: str) -> None:
+        actor = self.get_character(character_id)
+        location = self.get_location(location_id)
+        if actor is None or location is None:
+            return
+        for npc in self.characters_at(location_id, kind="npc"):
+            if npc["id"] == character_id:
+                continue
+            self.queue_reaction(
+                npc["id"], "character_arrived",
+                f"{actor['name']} arrived in {location['name']}.",
+                salience=0.5, source_character_id=character_id,
+                lifetime_minutes=5,
+            )
+
+    def expedite_decision_event(self, npc_id: str) -> None:
+        parameters = self.npc_parameters(npc_id)
+        cooldown = parameters.get("proactive_speech_cooldown_minutes", 3)
+        if not isinstance(cooldown, int) or isinstance(cooldown, bool) or cooldown < 1:
+            cooldown = 3
+        last_spoken = self.connection.execute(
+            "SELECT MAX(spoken_at) AS spoken_at FROM npc_reaction_cues "
+            "WHERE npc_id=? AND status='spoken'",
+            (npc_id,),
+        ).fetchone()["spoken_at"]
+        due_time = self.current_time
+        if last_spoken is not None:
+            due_time = max(due_time, int(last_spoken) + cooldown)
+        row = self.connection.execute(
+            "SELECT id,due_time FROM scheduled_events "
+            "WHERE event_type='npc_decision' AND status='pending' "
+            "AND json_extract(payload_json,'$.npc_id')=? "
+            "AND json_extract(payload_json,'$.reaction_only')=1 LIMIT 1",
+            (npc_id,),
+        ).fetchone()
+        if row is None:
+            self.schedule_event(
+                "npc_decision", due_time,
+                {"npc_id": npc_id, "reaction_only": True},
+            )
+        elif int(row["due_time"]) > due_time:
+            self.connection.execute(
+                "UPDATE scheduled_events SET due_time=? WHERE id=?",
+                (due_time, int(row["id"])),
+            )
+
     def memories_for(
         self, character_id: str, limit: int = 8
     ) -> list[dict[str, Any]]:
@@ -873,6 +1034,11 @@ class GameRepository:
                 affinity_delta, reason, action_id,
             ),
         )
+        if abs(trust_delta) >= 0.15 or abs(affinity_delta) >= 0.15:
+            self.queue_reaction(
+                observer_id, "relationship_changed", reason,
+                salience=0.8, source_character_id=target_id,
+            )
         return {"trust": trust, "affinity": affinity}
 
     def relationships_for(self, observer_id: str) -> list[dict[str, Any]]:
@@ -994,6 +1160,11 @@ class GameRepository:
             ") VALUES (?,?,?,?,?)",
             (row["id"], self.current_time, status, reason, source_action_id),
         )
+        if status != "active":
+            self.queue_reaction(
+                character_id, "goal_resolved", reason,
+                salience=0.9, lifetime_minutes=10,
+            )
 
     def ensure_decision_event(self, character_id: str, due_time: int) -> None:
         exists = self.connection.execute(
