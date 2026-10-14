@@ -95,6 +95,9 @@
           {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
           {"subject_id": "crisis", "predicate": "outcome", "value": "relay_sealed", "hidden": true}
         ],
+        "observations": [
+          {"kind": "witnessed_action", "subject_id": "relay", "summary": "Director Sable sealed the relay behind armored shutters, silencing the transmitter.", "salience": 0.95}
+        ],
         "simulation_status": "ended",
         "visible_message": "Director Sable seals the relay. The transmitter falls silent behind armored shutters; the sample remains contained, but no distress call leaves the station."
       }
@@ -109,6 +112,9 @@
           {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
           {"subject_id": "crisis", "predicate": "outcome", "value": "distress_broadcast", "hidden": true}
         ],
+        "observations": [
+          {"kind": "witnessed_action", "subject_id": "relay", "summary": "Technician Orr broadcast the distress packet and a rescue acknowledgment returned.", "salience": 0.95}
+        ],
         "simulation_status": "ended",
         "visible_message": "Orr broadcasts the distress packet. A rescue acknowledgment returns, but the energized relay leaves the unstable sample unsecured."
       }
@@ -122,6 +128,9 @@
         "facts": [
           {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
           {"subject_id": "crisis", "predicate": "outcome", "value": "sample_purged", "hidden": true}
+        ],
+        "observations": [
+          {"kind": "witnessed_action", "subject_id": "sample", "summary": "Dr. Lin purged the sample through the sterilization chamber, destroying it and its research value.", "salience": 0.95}
         ],
         "simulation_status": "ended",
         "visible_message": "Dr. Lin purges the sample. The contamination risk vanishes with years of research, while the relay remains available for a later rescue attempt."

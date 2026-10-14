@@ -26,6 +26,49 @@ from badbadger.scenarios.loader import ScenarioError, load_scenario
 
 
 class VerticalSliceTests(unittest.TestCase):
+    def test_witnessed_memory_is_scoped_persistent_and_in_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Path(temp_dir) / "save.db"
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(database, scenario=scenario)
+            app.handle("go to Relay Chamber")
+            with app.repository.transaction():
+                app.repository.move_character("lin", "relay")
+            app.handle("tell Technician Orr broadcast the distress packet")
+
+            orr_memories = app.repository.memories_for("orr")
+            lin_memories = app.repository.memories_for("lin")
+            self.assertEqual(len(orr_memories), 1)
+            self.assertEqual(len(lin_memories), 1)
+            self.assertIn("rescue acknowledgment", lin_memories[0]["summary"])
+            self.assertEqual(lin_memories[0]["source_character_id"], "orr")
+            self.assertEqual(app.repository.memories_for("sable"), [])
+            self.assertNotIn("crisis", repr(lin_memories))
+            app.repository.close()
+
+            resumed = open_prototype(database)
+            context = NPCContextBuilder(resumed.repository).build("lin")
+            self.assertEqual(context.memories[0]["summary"], lin_memories[0]["summary"])
+            inspected, _ = resumed.handle("npc Dr. Lin")
+            self.assertIn("rescue acknowledgment", inspected[0])
+            resumed.repository.close()
+
+    def test_memory_retrieval_is_bounded_and_salience_ordered(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = create_prototype(Path(temp_dir) / "save.db")
+            with engine.repository.transaction():
+                for index in range(10):
+                    engine.repository.add_memory(
+                        "npc", "room_a", "test", f"Memory {index}",
+                        salience=index / 10,
+                    )
+            memories = engine.repository.memories_for("npc")
+            self.assertEqual(len(memories), 8)
+            self.assertEqual(memories[0]["summary"], "Memory 9")
+            self.assertEqual(memories[-1]["summary"], "Memory 2")
+            engine.repository.close()
+
     def test_relay_crisis_preserves_private_knowledge_and_appearance(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
@@ -499,6 +542,12 @@ class VerticalSliceTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             engine = create_prototype(Path(temp_dir) / "save.db")
+            with engine.repository.transaction():
+                engine.repository.add_memory(
+                    "npc", "room_a", "witnessed_action",
+                    "The status panel emitted a visible warning.", salience=0.8,
+                    subject_id="panel",
+                )
             context = NPCContextBuilder(engine.repository).build("npc")
             responses = FakeResponses()
             sdk = SimpleNamespace(responses=responses)
@@ -521,6 +570,7 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertIs(call["text_format"], object)
             self.assertFalse(call["store"])
             serialized_context = call["input"][1]["content"]
+            self.assertIn("visible warning", serialized_context)
             self.assertNotIn("contains_access_code", serialized_context)
             self.assertNotIn("OPENAI_API_KEY", serialized_context)
             engine.repository.close()

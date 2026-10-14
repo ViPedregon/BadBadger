@@ -224,8 +224,65 @@ class GameRepository:
             if status not in {"active", "succeeded", "failed", "ended"}:
                 raise ValueError(f"Invalid simulation status: {status}")
             self.connection.execute("UPDATE simulation SET status=? WHERE id=1", (status,))
+        for observation in effects.get("observations", []):
+            for witness in self.characters_at(row["location_id"], kind="npc"):
+                self.add_memory(
+                    witness["id"],
+                    row["location_id"],
+                    observation.get("kind", "witnessed_action"),
+                    observation["summary"],
+                    salience=float(observation.get("salience", 0.5)),
+                    subject_id=observation.get("subject_id"),
+                    source_character_id=character_id,
+                )
         self.connection.execute("UPDATE npc_actions SET status='used' WHERE id=?", (action_id,))
         return True, str(effects.get("visible_message", f"{row['label']} is complete."))
+
+    def add_memory(
+        self,
+        character_id: str,
+        location_id: str,
+        memory_kind: str,
+        summary: str,
+        *,
+        salience: float = 0.5,
+        subject_id: str | None = None,
+        source_character_id: str | None = None,
+    ) -> int:
+        if not summary.strip():
+            raise ValueError("Memory summary cannot be empty")
+        if not 0 <= salience <= 1:
+            raise ValueError("Memory salience must be between zero and one")
+        cursor = self.connection.execute(
+            """
+            INSERT INTO memories(
+                character_id, game_time, location_id, memory_kind, subject_id,
+                summary, salience, source_character_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                character_id, self.current_time, location_id, memory_kind,
+                subject_id, summary, salience, source_character_id,
+            ),
+        )
+        return int(cursor.lastrowid)
+
+    def memories_for(
+        self, character_id: str, limit: int = 8
+    ) -> list[dict[str, Any]]:
+        """Return a bounded deterministic view: salient first, newest on ties."""
+        rows = self.connection.execute(
+            """
+            SELECT id, game_time, location_id, memory_kind, subject_id,
+                   summary, salience, source_character_id
+            FROM memories
+            WHERE character_id=?
+            ORDER BY salience DESC, game_time DESC, id DESC
+            LIMIT ?
+            """,
+            (character_id, limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def pending_activity(self, character_id: str) -> dict[str, Any] | None:
         row=self.connection.execute("SELECT * FROM character_activities WHERE character_id=? AND status='pending'",(character_id,)).fetchone()

@@ -135,5 +135,20 @@ CREATE TABLE IF NOT EXISTS dialogue (
     text TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS memories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    game_time INTEGER NOT NULL,
+    location_id TEXT NOT NULL REFERENCES locations(id),
+    memory_kind TEXT NOT NULL,
+    subject_id TEXT,
+    summary TEXT NOT NULL,
+    salience REAL NOT NULL DEFAULT 0.5 CHECK(salience >= 0 AND salience <= 1),
+    source_character_id TEXT REFERENCES characters(id)
+);
+
+CREATE INDEX IF NOT EXISTS memories_by_character
+ON memories(character_id, salience DESC, game_time DESC, id DESC);
+
 CREATE INDEX IF NOT EXISTS dialogue_by_npc
 ON dialogue(npc_id, id);

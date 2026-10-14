@@ -87,6 +87,16 @@ def _validate(data: dict[str, Any]) -> None:
         effects = action.get("effects", {})
         if not isinstance(effects.get("facts", []), list):
             raise ScenarioError(f"Fact effects for action {action['id']} must be a list")
+        if not isinstance(effects.get("observations", []), list):
+            raise ScenarioError(f"Observations for action {action['id']} must be a list")
+        for observation in effects.get("observations", []):
+            if not isinstance(observation, dict) or not isinstance(
+                observation.get("summary"), str
+            ):
+                raise ScenarioError(f"Invalid observation for action {action['id']}")
+            salience = observation.get("salience", 0.5)
+            if not isinstance(salience, (int, float)) or not 0 <= salience <= 1:
+                raise ScenarioError(f"Invalid observation salience for action {action['id']}")
         if effects.get("simulation_status") not in {
             None, "active", "succeeded", "failed", "ended"
         }:

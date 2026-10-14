@@ -12,6 +12,7 @@ The current slice includes:
 - persistent locations, characters, facts, and character-scoped beliefs;
 - deterministic movement, examination, and waiting;
 - persistent NPC dialogue with character-scoped context and beliefs;
+- persistent, character-scoped episodic memories from witnessed events;
 - append-only belief evidence with source provenance and deterministic
   contradiction resolution;
 - bounded NPC decision events that can produce independently validated actions;
@@ -101,6 +102,13 @@ or `legacy`. New evidence never blindly overwrites an existing belief. Evidence
 scores select the current value, recency breaks score ties, and contradictory
 evidence lowers the resolved confidence. Dialogue-derived updates are recorded
 as hearsay from the player.
+
+Scenario interactions may declare concise `observations`. When an interaction
+resolves, the deterministic engine stores that observation only for active NPCs
+at the interaction's location. NPC context retrieves at most eight memories,
+ordered by salience and then recency. Observation text is explicitly authored
+as visible information; hidden fact payloads are never converted into memories
+or exposed automatically. Use `npc <name>` to inspect the resulting memory view.
 
 ## Optional OpenAI NPC dialogue
 

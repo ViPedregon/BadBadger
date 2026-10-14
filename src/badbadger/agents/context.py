@@ -17,6 +17,7 @@ class NPCContext:
     visible_characters: list[dict[str, Any]]
     beliefs: list[dict[str, Any]]
     recent_dialogue: list[dict[str, Any]]
+    memories: list[dict[str, Any]]
     goals: list[dict[str, Any]]
     parameters: dict[str, Any]
     available_actions: list[dict[str, Any]]
@@ -57,6 +58,7 @@ class NPCContextBuilder:
             visible_characters=visible,
             beliefs=self.repository.beliefs_for(npc_id),
             recent_dialogue=self.repository.recent_dialogue(npc_id),
+            memories=self.repository.memories_for(npc_id),
             goals=self.repository.goals_for(npc_id),
             parameters=self.repository.npc_parameters(npc_id),
             available_actions=[

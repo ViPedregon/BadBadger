@@ -198,6 +198,15 @@ class GameApplication:
         )
         if not beliefs:
             lines.append("  (none)")
+        lines.append("Memories:")
+        memories = self.repository.memories_for(npc["id"])
+        lines.extend(
+            f"  [t={memory['game_time']}, salience={memory['salience']:.2f}] "
+            f"{memory['summary']}"
+            for memory in memories
+        )
+        if not memories:
+            lines.append("  (none)")
         return ["\n".join(lines)]
 
 
