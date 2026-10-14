@@ -134,6 +134,14 @@
       "preconditions": [{"subject_id": "crisis", "predicate": "resolved", "equals": false}],
       "effects": {
         "player_trust_required": 0.4,
+        "decision": {
+          "base_score": 0.7,
+          "minimum_score": 0.5,
+          "belief_factors": [
+            {"subject_id": "rescue", "predicate": "is_listening", "equals": true, "score": 0.4, "reason": "Orr believes a rescue ship can hear the broadcast"},
+            {"subject_id": "sample", "predicate": "is_unstable", "equals": true, "score": -1.0, "reason": "Orr believes energizing the relay would endanger containment"}
+          ]
+        },
         "facts": [
           {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
           {"subject_id": "crisis", "predicate": "outcome", "value": "distress_broadcast", "hidden": true}

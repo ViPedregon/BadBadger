@@ -8,6 +8,7 @@ def resolve_npc_proposal(
     *,
     requested_by_player: bool = False,
     allow_social: bool = False,
+    autonomous: bool = False,
 ) -> tuple[bool,str]:
     if proposal.kind == "share_belief":
         if not allow_social:
@@ -26,7 +27,9 @@ def resolve_npc_proposal(
         if not isinstance(action_id, str):
             return False, "Invalid interaction."
         accepted, message = repo.apply_npc_action(
-            npc_id, action_id, requested_by_player=requested_by_player
+            npc_id, action_id,
+            requested_by_player=requested_by_player,
+            autonomous=autonomous,
         )
         npc = repo.get_character(npc_id)
         player = repo.get_player()

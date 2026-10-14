@@ -16,6 +16,7 @@ The current slice includes:
 - directional NPC trust and affinity with an append-only change history;
 - trust-gated private disclosures and requested NPC cooperation;
 - autonomous, engine-validated NPC-to-NPC belief sharing;
+- explainable belief-driven scoring for autonomous consequential actions;
 - append-only belief evidence with source provenance and deterministic
   contradiction resolution;
 - bounded NPC decision events that can produce independently validated actions;
@@ -136,6 +137,13 @@ episodic memories, and adjusts the listener's relationship toward the speaker.
 Protected disclosure content is never included in these affordances. Offscreen
 exchanges produce no player narration or knowledge; a player in the room hears
 the exchange and gains corresponding hearsay evidence.
+
+Scenario actions may define a base decision score, a minimum autonomous score,
+and belief-based modifiers. The engine evaluates these only from the deciding
+NPC's resolved beliefs, includes human-readable reasons in filtered context and
+decision history, and rechecks eligibility before applying an autonomous
+action. Player requests remain a separate path with their own trust gates. Use
+`npc <name>` to inspect the current score and the beliefs affecting it.
 
 ## Optional OpenAI NPC dialogue
 

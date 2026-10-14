@@ -168,6 +168,42 @@ def _validate(data: dict[str, Any]) -> None:
             ):
                 raise ScenarioError(f"Invalid precondition for action {action['id']}")
         effects = action.get("effects", {})
+        decision = effects.get("decision", {})
+        if not isinstance(decision, dict):
+            raise ScenarioError(f"Decision policy for action {action['id']} must be an object")
+        for key, default in (("base_score", 1.0), ("minimum_score", 0.0)):
+            value = decision.get(key, default)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise ScenarioError(
+                    f"Decision {key} for action {action['id']} must be numeric"
+                )
+        factors = decision.get("belief_factors", [])
+        if not isinstance(factors, list):
+            raise ScenarioError(f"Belief factors for action {action['id']} must be a list")
+        for factor in factors:
+            if not isinstance(factor, dict) or not all(
+                key in factor
+                for key in ("subject_id", "predicate", "equals", "score", "reason")
+            ):
+                raise ScenarioError(f"Invalid belief factor for action {action['id']}")
+            if not all(
+                isinstance(factor[key], str) and factor[key].strip()
+                for key in ("subject_id", "predicate", "reason")
+            ):
+                raise ScenarioError(f"Belief factor text for action {action['id']} is invalid")
+            if not isinstance(factor["score"], (int, float)) or isinstance(
+                factor["score"], bool
+            ):
+                raise ScenarioError(f"Belief factor score for action {action['id']} is invalid")
+            confidence = factor.get("min_confidence", 0.0)
+            if (
+                not isinstance(confidence, (int, float))
+                or isinstance(confidence, bool)
+                or not 0 <= confidence <= 1
+            ):
+                raise ScenarioError(
+                    f"Belief factor confidence for action {action['id']} must be between 0 and 1"
+                )
         trust_required = effects.get("player_trust_required")
         if trust_required is not None and (
             not isinstance(trust_required, (int, float))

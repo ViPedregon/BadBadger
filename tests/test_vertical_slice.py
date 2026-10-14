@@ -321,6 +321,46 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertFalse(app.repository.get_fact("crisis", "resolved"))
             app.repository.close()
 
+    def test_shared_belief_changes_explainable_autonomous_decision(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+
+            initial = app.repository.available_npc_actions("orr")[0]
+            self.assertEqual(initial["id"], "orr_broadcast")
+            self.assertAlmostEqual(initial["decision_score"], 1.1)
+            self.assertTrue(initial["autonomous_eligible"])
+
+            with app.repository.transaction():
+                app.repository.move_character("lin", "relay")
+                accepted, _ = app.repository.share_belief(
+                    "lin", "orr", "sample", "is_unstable"
+                )
+            self.assertTrue(accepted)
+            changed = app.repository.available_npc_actions("orr")[0]
+            self.assertAlmostEqual(changed["decision_score"], 0.1)
+            self.assertFalse(changed["autonomous_eligible"])
+            self.assertTrue(any(
+                "endanger containment" in reason
+                for reason in changed["decision_reasons"]
+            ))
+
+            with app.repository.transaction():
+                accepted, message = resolve_npc_proposal(
+                    app.repository,
+                    "orr",
+                    ActionProposal("interact", {"action_id": "orr_broadcast"}),
+                    autonomous=True,
+                )
+            self.assertFalse(accepted)
+            self.assertIn("beliefs weigh against", message)
+            self.assertEqual(app.repository.simulation_status, "active")
+            inspected, _ = app.handle("npc Technician Orr")
+            self.assertIn("score=0.10, minimum=0.50, eligible=False", inspected[0])
+            self.assertIn("endanger containment", inspected[0])
+            app.repository.close()
+
     def test_engine_rejects_invented_npc_interaction(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
@@ -581,6 +621,21 @@ class VerticalSliceTests(unittest.TestCase):
             app.handle("wait 5")
             self.assertEqual(app.repository.get_character("npc")["location_id"], "room_b")
             app.repository.close()
+
+    def test_deterministic_autonomy_prefers_highest_scored_goal_action(self):
+        context = SimpleNamespace(
+            goals=[{"description": "Stabilize the relay."}],
+            available_actions=[
+                {"id": "low", "kind": "interact", "label": "Stabilize the relay",
+                 "decision_score": 0.4, "autonomous_eligible": True},
+                {"id": "high", "kind": "interact", "label": "Stabilize the relay",
+                 "decision_score": 0.9, "autonomous_eligible": True},
+            ],
+        )
+        response = DeterministicNPCBackend().respond(
+            context, "ENGINE DECISION TICK"
+        )
+        self.assertEqual(response.proposed_actions[0].parameters["action_id"], "high")
 
     def test_decision_call_budget_limits_npc_backend_calls(self):
         class CountingBackend:

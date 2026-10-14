@@ -189,6 +189,17 @@ class GameApplication:
         )
         if not goals:
             lines.append("  (none)")
+        lines.append("Autonomous action considerations:")
+        decisions = self.repository.available_npc_actions(npc["id"])
+        lines.extend(
+            f"  {action['label']}: score={action['decision_score']:.2f}, "
+            f"minimum={action['minimum_score']:.2f}, "
+            f"eligible={action['autonomous_eligible']}\n    "
+            + " ".join(action["decision_reasons"])
+            for action in decisions
+        )
+        if not decisions:
+            lines.append("  (none at current location)")
         lines.append("Beliefs:")
         beliefs = self.repository.beliefs_for(npc["id"])
         lines.extend(

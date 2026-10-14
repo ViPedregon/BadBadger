@@ -59,23 +59,26 @@ class DeterministicNPCBackend:
         lowered = player_input.lower()
         if "engine decision tick" in lowered:
             goals = " ".join(goal["description"] for goal in context.goals).lower()
-            selected = next(
-                (
-                    action
-                    for action in context.available_actions
-                    if (
-                        action["kind"] == "move"
-                        and (
-                            action["target_id"].lower() in goals
-                            or action["target_name"].lower() in goals
-                        )
+            candidates = [
+                action
+                for action in context.available_actions
+                if (
+                    action["kind"] == "move"
+                    and (
+                        action["target_id"].lower() in goals
+                        or action["target_name"].lower() in goals
                     )
-                    or (
-                        action["kind"] == "interact"
-                        and action["label"].lower() in goals
-                    )
-                ),
-                None,
+                )
+                or (
+                    action["kind"] == "interact"
+                    and action.get("autonomous_eligible", True)
+                    and action["label"].lower() in goals
+                )
+            ]
+            selected = max(
+                candidates,
+                key=lambda action: float(action.get("decision_score", 0.0)),
+                default=None,
             )
             if selected is not None:
                 if selected["kind"] == "interact":

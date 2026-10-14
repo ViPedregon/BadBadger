@@ -57,7 +57,8 @@ class AutonomyScheduler:
                 if not response.degraded:
                     for proposal in response.proposed_actions[:1]:
                         accepted, message = resolve_npc_proposal(
-                            self.repository, npc_id, proposal, allow_social=True
+                            self.repository, npc_id, proposal,
+                            allow_social=True, autonomous=True,
                         )
                         results.append({"accepted": accepted, "proposal": proposal.__dict__})
                         if message:
@@ -68,7 +69,20 @@ class AutonomyScheduler:
                     "npc_decision",
                     actor_id=npc_id,
                     input_data={"event_id": event["id"]},
-                    result_data={"degraded": response.degraded, "proposals": results},
+                    result_data={
+                        "degraded": response.degraded,
+                        "proposals": results,
+                        "decision_context": [
+                            {
+                                "action_id": action.get("id"),
+                                "score": action.get("decision_score"),
+                                "eligible": action.get("autonomous_eligible"),
+                                "reasons": action.get("decision_reasons", []),
+                            }
+                            for action in context.available_actions
+                            if action["kind"] == "interact"
+                        ],
+                    },
                 )
             if self.repository.simulation_status != "active":
                 break

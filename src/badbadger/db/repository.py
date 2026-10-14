@@ -281,13 +281,47 @@ class GameRepository:
                 == item["equals"]
                 for item in preconditions
             ):
+                effects = json.loads(row["effects_json"])
+                decision = self._evaluate_action_decision(
+                    character_id, effects.get("decision", {})
+                )
                 actions.append({
                     "id": row["id"],
                     "kind": "interact",
                     "label": row["label"],
                     "description": row["description"],
+                    **decision,
                 })
         return actions
+
+    def _evaluate_action_decision(
+        self, character_id: str, policy: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Compute an explainable utility from the NPC's resolved beliefs."""
+        score = float(policy.get("base_score", 1.0))
+        minimum = float(policy.get("minimum_score", 0.0))
+        reasons = [f"Base score: {score:+.2f}."]
+        beliefs = {
+            (item["subject_id"], item["predicate"]): item
+            for item in self.beliefs_for(character_id)
+        }
+        for factor in policy.get("belief_factors", []):
+            belief = beliefs.get((factor["subject_id"], factor["predicate"]))
+            if (
+                belief is not None
+                and belief["value"] == factor["equals"]
+                and float(belief["confidence"])
+                >= float(factor.get("min_confidence", 0.0))
+            ):
+                change = float(factor["score"])
+                score += change
+                reasons.append(f"{factor['reason']} ({change:+.2f}).")
+        return {
+            "decision_score": round(score, 4),
+            "minimum_score": minimum,
+            "autonomous_eligible": score >= minimum,
+            "decision_reasons": reasons,
+        }
 
     def available_social_actions(
         self, character_id: str, limit: int = 8
@@ -415,7 +449,12 @@ class GameRepository:
         return True, message if visible else ""
 
     def apply_npc_action(
-        self, character_id: str, action_id: str, *, requested_by_player: bool = False
+        self,
+        character_id: str,
+        action_id: str,
+        *,
+        requested_by_player: bool = False,
+        autonomous: bool = False,
     ) -> tuple[bool, str]:
         """Apply one predeclared interaction after rechecking every constraint."""
         row = self.connection.execute(
@@ -432,6 +471,12 @@ class GameRepository:
         ):
             return False, "Interaction is not currently available."
         effects = json.loads(row["effects_json"])
+        if autonomous:
+            decision = self._evaluate_action_decision(
+                character_id, effects.get("decision", {})
+            )
+            if not decision["autonomous_eligible"]:
+                return False, "The NPC's current beliefs weigh against that action."
         if requested_by_player and "player_trust_required" in effects:
             player = self.get_player()
             relationship = self.connection.execute(
