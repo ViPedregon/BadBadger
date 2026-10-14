@@ -229,6 +229,16 @@ class GameApplication:
         lines.extend(
             f"  {relationship['target_name']}: trust={relationship['trust']:.2f}, "
             f"affinity={relationship['affinity']:.2f}"
+            + (
+                f"\n    Latest ({relationship['recent_changes'][-1]['source_type']}"
+                + (
+                    f" via {relationship['recent_changes'][-1]['source_action_id']}"
+                    if relationship["recent_changes"][-1].get("source_action_id")
+                    else ""
+                )
+                + f"): {relationship['recent_changes'][-1]['reason']}"
+                if relationship["recent_changes"] else ""
+            )
             for relationship in relationships
         )
         if not relationships:

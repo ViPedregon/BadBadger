@@ -192,7 +192,7 @@ class VerticalSliceTests(unittest.TestCase):
                 "tell Technician Orr broadcast the distress packet"
             )
             self.assertTrue(any("rescue acknowledgment" in item for item in messages))
-            self.assertEqual(app.repository.simulation_status, "ended")
+            self.assertEqual(app.repository.simulation_status, "active")
             self.assertEqual(
                 app.repository.get_fact("crisis", "outcome"), "distress_broadcast"
             )
@@ -214,9 +214,22 @@ class VerticalSliceTests(unittest.TestCase):
             inspected = app.inspect_npc("Technician Orr")[0]
             self.assertIn("broadcast_rescue (completed)", inspected)
             self.assertIn("received a rescue acknowledgment", inspected)
+            self.assertIn("Latest (action via orr_broadcast)", inspected)
+            self.assertIn("backed Orr's successful rescue attempt", inspected)
+            app.repository.close()
+
+            app = open_prototype(database)
+            self.assertEqual(app.repository.simulation_status, "active")
+            reaction, _ = app.handle("ask Technician Orr what now")
+            self.assertIn("accomplished what mattered", reaction[0])
+            self.assertIn("rescue acknowledgment", reaction[0])
+            self.assertIn("trust your part", reaction[0])
             with app.repository.transaction():
                 app.repository.move_character("lin", "relay")
             self.assertEqual(app.repository.available_npc_actions("lin"), [])
+            aftermath, _ = app.handle("wait 8")
+            self.assertTrue(any("aftermath settles" in item for item in aftermath))
+            self.assertEqual(app.repository.simulation_status, "ended")
             ended, _ = app.handle("wait 1")
             self.assertIn("mission has ended", ended[0].lower())
             app.repository.close()
@@ -275,6 +288,96 @@ class VerticalSliceTests(unittest.TestCase):
             inspected, _ = resumed.handle("npc Technician Orr")
             self.assertIn("handshake window: shared", inspected[0])
             resumed.repository.close()
+
+    def test_all_relay_outcomes_resolve_goals_relationships_and_reactions(self):
+        outcomes = {
+            "sable_seal_relay": {
+                "actor": "sable",
+                "goals": {
+                    "sable": "completed", "orr": "failed", "lin": "abandoned",
+                },
+                "player_trust_deltas": {
+                    "sable": 0.15, "orr": -0.15, "lin": 0.05,
+                },
+            },
+            "orr_broadcast": {
+                "actor": "orr",
+                "goals": {
+                    "sable": "failed", "orr": "completed", "lin": "failed",
+                },
+                "player_trust_deltas": {
+                    "sable": -0.25, "orr": 0.15, "lin": -0.15,
+                },
+            },
+            "lin_purge_sample": {
+                "actor": "lin",
+                "goals": {
+                    "sable": "completed", "orr": "abandoned", "lin": "completed",
+                },
+                "player_trust_deltas": {
+                    "sable": 0.1, "orr": -0.1, "lin": 0.15,
+                },
+            },
+        }
+        for action_id, expected in outcomes.items():
+            with self.subTest(action_id=action_id), tempfile.TemporaryDirectory() as temp_dir:
+                resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+                with as_file(resource) as scenario:
+                    app = open_prototype(
+                        Path(temp_dir) / "save.db", scenario=scenario
+                    )
+                actor_id = expected["actor"]
+                with app.repository.transaction():
+                    action_row = app.repository.connection.execute(
+                        "SELECT location_id FROM npc_actions WHERE id=?", (action_id,)
+                    ).fetchone()
+                    app.repository.move_character(actor_id, action_row["location_id"])
+                    if action_id == "orr_broadcast":
+                        app.repository.set_relationship(
+                            "orr", "player", 0.5, 0.15,
+                            reason="Test setup satisfies the cooperation gate.",
+                        )
+                before = {
+                    npc_id: next(
+                        item for item in app.repository.relationships_for(npc_id)
+                        if item["target_id"] == "player"
+                    )["trust"]
+                    for npc_id in ("sable", "orr", "lin")
+                }
+                with app.repository.transaction():
+                    accepted, _ = app.repository.apply_npc_action(
+                        actor_id, action_id, requested_by_player=True
+                    )
+                self.assertTrue(accepted)
+
+                for npc_id, status in expected["goals"].items():
+                    goal = app.repository.goals_for(
+                        npc_id, include_resolved=True
+                    )[0]
+                    self.assertEqual(goal["status"], status)
+                    relationship = next(
+                        item for item in app.repository.relationships_for(npc_id)
+                        if item["target_id"] == "player"
+                    )
+                    self.assertAlmostEqual(
+                        relationship["trust"],
+                        before[npc_id] + expected["player_trust_deltas"][npc_id],
+                    )
+                    consequence = relationship["recent_changes"][-1]
+                    self.assertEqual(consequence["source_type"], "action")
+                    self.assertEqual(consequence["source_action_id"], action_id)
+
+                reactions = []
+                service = DialogueService(
+                    app.repository, DeterministicNPCBackend()
+                )
+                for npc_id in ("sable", "orr", "lin"):
+                    with app.repository.transaction():
+                        npc = app.repository.get_character(npc_id)
+                        app.repository.move_character("player", npc["location_id"])
+                    reactions.append(service.converse(npc_id, "What now?")[0])
+                self.assertEqual(len(set(reactions)), 3)
+                app.repository.close()
 
     def test_relationship_gain_cannot_unlock_disclosure_in_same_exchange(self):
         class ManipulativeBackend:
@@ -390,7 +493,7 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertIn("priorities weigh against", message)
             self.assertEqual(app.repository.simulation_status, "active")
             inspected, _ = app.handle("npc Technician Orr")
-            self.assertIn("score=0.10, minimum=0.60, eligible=False", inspected[0])
+            self.assertIn("score=0.10, minimum=1.00, eligible=False", inspected[0])
             self.assertIn("endanger containment", inspected[0])
             app.repository.close()
 
@@ -423,6 +526,34 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertFalse(accepted)
             self.assertIn("priorities weigh against", message)
             self.assertFalse(app.repository.get_fact("crisis", "resolved"))
+            app.repository.close()
+
+    def test_relationship_changes_autonomous_decision(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+
+            urgent = app.repository.available_npc_actions("orr")[0]
+            self.assertAlmostEqual(urgent["decision_score"], 1.1)
+            self.assertTrue(urgent["autonomous_eligible"])
+            self.assertTrue(any(
+                "distrust of Sable" in reason
+                for reason in urgent["decision_reasons"]
+            ))
+
+            with app.repository.transaction():
+                app.repository.set_relationship(
+                    "orr", "sable", 0.0, -0.15,
+                    reason="Orr no longer distrusts Sable's judgment.",
+                )
+            reconsidered = app.repository.available_npc_actions("orr")[0]
+            self.assertAlmostEqual(reconsidered["decision_score"], 0.9)
+            self.assertFalse(reconsidered["autonomous_eligible"])
+            self.assertFalse(any(
+                "distrust of Sable" in reason
+                for reason in reconsidered["decision_reasons"]
+            ))
             app.repository.close()
 
     def test_witnessed_memory_changes_autonomous_decision_until_it_expires(self):
@@ -516,6 +647,13 @@ class VerticalSliceTests(unittest.TestCase):
             resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
             with as_file(resource) as scenario:
                 app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+            player_trust_before = {
+                npc_id: next(
+                    item for item in app.repository.relationships_for(npc_id)
+                    if item["target_id"] == "player"
+                )["trust"]
+                for npc_id in ("sable", "orr", "lin")
+            }
             accepted, message = resolve_npc_proposal(
                 app.repository,
                 "orr",
@@ -526,6 +664,12 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertEqual(
                 app.repository.get_fact("crisis", "outcome"), "distress_broadcast"
             )
+            for npc_id, trust in player_trust_before.items():
+                relationship = next(
+                    item for item in app.repository.relationships_for(npc_id)
+                    if item["target_id"] == "player"
+                )
+                self.assertAlmostEqual(relationship["trust"], trust)
             app.repository.close()
 
     def test_npc_context_contains_only_reachable_action_affordances(self):

@@ -378,6 +378,23 @@ class GameRepository:
                 change = float(factor["score_per_priority"]) * int(goal["priority"])
                 score += change
                 reasons.append(f"{factor['reason']} ({change:+.2f}).")
+        relationships = {
+            item["target_id"]: item for item in self.relationships_for(character_id)
+        }
+        for factor in policy.get("relationship_factors", []):
+            relationship = relationships.get(factor["target_id"])
+            if relationship is None:
+                continue
+            actual = float(relationship[factor["metric"]])
+            expected = float(factor["value"])
+            operator = factor["operator"]
+            matches = (
+                actual >= expected if operator == "gte" else actual <= expected
+            )
+            if matches:
+                change = float(factor["score"])
+                score += change
+                reasons.append(f"{factor['reason']} ({change:+.2f}).")
         beliefs = {
             (item["subject_id"], item["predicate"]): item
             for item in self.beliefs_for(character_id)
@@ -605,6 +622,26 @@ class GameRepository:
                 goal_effect["status"], goal_effect["reason"],
                 source_action_id=action_id,
             )
+        for relationship_effect in effects.get("relationships", []):
+            if relationship_effect.get("when_requested_by_player", False) and not (
+                requested_by_player
+            ):
+                continue
+            self.apply_action_relationship_change(
+                relationship_effect["observer_id"],
+                relationship_effect["target_id"],
+                float(relationship_effect.get("trust_delta", 0.0)),
+                float(relationship_effect.get("affinity_delta", 0.0)),
+                relationship_effect["reason"],
+                action_id,
+            )
+        for scheduled in effects.get("scheduled_events", []):
+            self.schedule_event(
+                scheduled["type"],
+                self.current_time + int(scheduled["delay_minutes"]),
+                scheduled.get("payload", {}),
+                scheduled.get("cancellation_key"),
+            )
         self.connection.execute("UPDATE npc_actions SET status='used' WHERE id=?", (action_id,))
         return True, str(effects.get("visible_message", f"{row['label']} is complete."))
 
@@ -785,6 +822,59 @@ class GameRepository:
             "effective_confidence": float(claimed_confidence) * credibility,
         }
 
+    def apply_action_relationship_change(
+        self,
+        observer_id: str,
+        target_id: str,
+        trust_delta: float,
+        affinity_delta: float,
+        reason: str,
+        action_id: str,
+    ) -> dict[str, float]:
+        """Apply a validated consequence without mislabeling it as dialogue."""
+        if not -1 <= trust_delta <= 1 or not -1 <= affinity_delta <= 1:
+            raise ValueError("Action relationship changes must be between -1 and 1")
+        if observer_id == target_id:
+            raise ValueError("A character cannot have a relationship with itself")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("Action relationship changes require a reason")
+        row = self.connection.execute(
+            "SELECT trust,affinity FROM relationships "
+            "WHERE observer_id=? AND target_id=?",
+            (observer_id, target_id),
+        ).fetchone()
+        if row is None:
+            if self.get_character(observer_id) is None or self.get_character(target_id) is None:
+                raise ValueError("Relationships require known characters")
+            self.connection.execute(
+                "INSERT INTO relationships("
+                "observer_id,target_id,trust,affinity,updated_at_game_time"
+                ") VALUES (?,?,0,0,?)",
+                (observer_id, target_id, self.current_time),
+            )
+            trust = trust_delta
+            affinity = affinity_delta
+        else:
+            trust = float(row["trust"]) + trust_delta
+            affinity = float(row["affinity"]) + affinity_delta
+        trust = max(-1.0, min(1.0, trust))
+        affinity = max(-1.0, min(1.0, affinity))
+        self.connection.execute(
+            "UPDATE relationships SET trust=?,affinity=?,updated_at_game_time=? "
+            "WHERE observer_id=? AND target_id=?",
+            (trust, affinity, self.current_time, observer_id, target_id),
+        )
+        self.connection.execute(
+            "INSERT INTO relationship_action_events("
+            "observer_id,target_id,game_time,trust_delta,affinity_delta,"
+            "reason,source_action_id) VALUES (?,?,?,?,?,?,?)",
+            (
+                observer_id, target_id, self.current_time, trust_delta,
+                affinity_delta, reason, action_id,
+            ),
+        )
+        return {"trust": trust, "affinity": affinity}
+
     def relationships_for(self, observer_id: str) -> list[dict[str, Any]]:
         rows = self.connection.execute(
             """
@@ -802,12 +892,25 @@ class GameRepository:
             item = dict(row)
             events = self.connection.execute(
                 """
-                SELECT game_time, source_type, trust_delta, affinity_delta, reason
-                FROM relationship_events
-                WHERE observer_id=? AND target_id=?
-                ORDER BY id DESC LIMIT 5
+                SELECT game_time,source_type,trust_delta,affinity_delta,reason,
+                       source_action_id
+                FROM (
+                    SELECT game_time,source_type,trust_delta,affinity_delta,reason,
+                           NULL AS source_action_id,id AS event_id,0 AS event_table
+                    FROM relationship_events
+                    WHERE observer_id=? AND target_id=?
+                    UNION ALL
+                    SELECT game_time,'action',trust_delta,affinity_delta,reason,
+                           source_action_id,id AS event_id,1 AS event_table
+                    FROM relationship_action_events
+                    WHERE observer_id=? AND target_id=?
+                )
+                ORDER BY game_time DESC,event_table DESC,event_id DESC LIMIT 5
                 """,
-                (observer_id, row["target_id"]),
+                (
+                    observer_id, row["target_id"],
+                    observer_id, row["target_id"],
+                ),
             ).fetchall()
             item["recent_changes"] = [dict(event) for event in reversed(events)]
             result.append(item)

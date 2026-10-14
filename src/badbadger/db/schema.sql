@@ -209,6 +209,22 @@ CREATE TABLE IF NOT EXISTS relationship_events (
 CREATE INDEX IF NOT EXISTS relationship_events_by_pair
 ON relationship_events(observer_id, target_id, id DESC);
 
+CREATE TABLE IF NOT EXISTS relationship_action_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    observer_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    game_time INTEGER NOT NULL,
+    trust_delta REAL NOT NULL,
+    affinity_delta REAL NOT NULL,
+    reason TEXT NOT NULL,
+    source_action_id TEXT NOT NULL,
+    FOREIGN KEY(observer_id, target_id)
+        REFERENCES relationships(observer_id, target_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS relationship_action_events_by_pair
+ON relationship_action_events(observer_id, target_id, id DESC);
+
 CREATE INDEX IF NOT EXISTS memories_by_character
 ON memories(character_id, salience DESC, game_time DESC, id DESC);
 

@@ -352,6 +352,49 @@ def _validate(data: dict[str, Any]) -> None:
                 raise ScenarioError(
                     f"Goal factor status for action {action['id']} is invalid"
                 )
+        relationship_factors = decision.get("relationship_factors", [])
+        if not isinstance(relationship_factors, list):
+            raise ScenarioError(
+                f"Relationship factors for action {action['id']} must be a list"
+            )
+        for factor in relationship_factors:
+            if not isinstance(factor, dict) or not all(
+                key in factor
+                for key in ("target_id", "metric", "operator", "value", "score", "reason")
+            ):
+                raise ScenarioError(
+                    f"Invalid relationship factor for action {action['id']}"
+                )
+            if (
+                factor["target_id"] not in character_ids
+                or factor["target_id"] == action["character_id"]
+            ):
+                raise ScenarioError(
+                    f"Relationship factor target for action {action['id']} is invalid"
+                )
+            if factor["metric"] not in {"trust", "affinity"}:
+                raise ScenarioError(
+                    f"Relationship factor metric for action {action['id']} is invalid"
+                )
+            if factor["operator"] not in {"gte", "lte"}:
+                raise ScenarioError(
+                    f"Relationship factor operator for action {action['id']} is invalid"
+                )
+            for key in ("value", "score"):
+                if not isinstance(factor[key], (int, float)) or isinstance(
+                    factor[key], bool
+                ):
+                    raise ScenarioError(
+                        f"Relationship factor {key} for action {action['id']} is invalid"
+                    )
+            if not -1 <= factor["value"] <= 1:
+                raise ScenarioError(
+                    f"Relationship factor value for action {action['id']} must be between -1 and 1"
+                )
+            if not isinstance(factor["reason"], str) or not factor["reason"].strip():
+                raise ScenarioError(
+                    f"Relationship factor reason for action {action['id']} is invalid"
+                )
         trust_required = effects.get("player_trust_required")
         if trust_required is not None and (
             not isinstance(trust_required, (int, float))
@@ -397,6 +440,85 @@ def _validate(data: dict[str, Any]) -> None:
             if not isinstance(goal_effect["reason"], str) or not goal_effect["reason"].strip():
                 raise ScenarioError(
                     f"Goal effect reason for action {action['id']} is invalid"
+                )
+        relationship_effects = effects.get("relationships", [])
+        if not isinstance(relationship_effects, list):
+            raise ScenarioError(
+                f"Relationship effects for action {action['id']} must be a list"
+            )
+        for relationship_effect in relationship_effects:
+            if not isinstance(relationship_effect, dict) or not all(
+                key in relationship_effect
+                for key in ("observer_id", "target_id", "reason")
+            ):
+                raise ScenarioError(
+                    f"Invalid relationship effect for action {action['id']}"
+                )
+            observer_id = relationship_effect["observer_id"]
+            target_id = relationship_effect["target_id"]
+            if (
+                observer_id not in character_ids
+                or target_id not in character_ids
+                or observer_id == target_id
+            ):
+                raise ScenarioError(
+                    f"Relationship effect pair for action {action['id']} is invalid"
+                )
+            for key in ("trust_delta", "affinity_delta"):
+                value = relationship_effect.get(key, 0.0)
+                if (
+                    not isinstance(value, (int, float))
+                    or isinstance(value, bool)
+                    or not -1 <= value <= 1
+                ):
+                    raise ScenarioError(
+                        f"Relationship effect {key} for action {action['id']} is invalid"
+                    )
+            if not isinstance(relationship_effect["reason"], str) or not (
+                relationship_effect["reason"].strip()
+            ):
+                raise ScenarioError(
+                    f"Relationship effect reason for action {action['id']} is invalid"
+                )
+            conditional = relationship_effect.get("when_requested_by_player", False)
+            if not isinstance(conditional, bool):
+                raise ScenarioError(
+                    f"Relationship effect condition for action {action['id']} is invalid"
+                )
+        scheduled_events = effects.get("scheduled_events", [])
+        if not isinstance(scheduled_events, list):
+            raise ScenarioError(
+                f"Scheduled effects for action {action['id']} must be a list"
+            )
+        for scheduled in scheduled_events:
+            if not isinstance(scheduled, dict) or not all(
+                key in scheduled for key in ("type", "delay_minutes", "payload")
+            ):
+                raise ScenarioError(f"Invalid scheduled effect for action {action['id']}")
+            if scheduled["type"] != "set_simulation_status":
+                raise ScenarioError(
+                    f"Unsupported scheduled effect for action {action['id']}"
+                )
+            if (
+                not isinstance(scheduled["delay_minutes"], int)
+                or isinstance(scheduled["delay_minutes"], bool)
+                or scheduled["delay_minutes"] < 1
+            ):
+                raise ScenarioError(
+                    f"Scheduled effect delay for action {action['id']} must be positive"
+                )
+            payload = scheduled["payload"]
+            if not isinstance(payload, dict) or payload.get("status") not in {
+                "succeeded", "failed", "ended"
+            }:
+                raise ScenarioError(
+                    f"Scheduled terminal status for action {action['id']} is invalid"
+                )
+            if "visible_message" in payload and not isinstance(
+                payload["visible_message"], str
+            ):
+                raise ScenarioError(
+                    f"Scheduled message for action {action['id']} is invalid"
                 )
         if effects.get("simulation_status") not in {
             None, "active", "succeeded", "failed", "ended"

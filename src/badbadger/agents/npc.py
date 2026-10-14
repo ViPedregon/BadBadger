@@ -58,7 +58,10 @@ class DeterministicNPCBackend:
     def respond(self, context: NPCContext, player_input: str) -> NPCResponse:
         lowered = player_input.lower()
         if "engine decision tick" in lowered:
-            goals = " ".join(goal["description"] for goal in context.goals).lower()
+            goals = " ".join(
+                goal["description"]
+                for goal in context.goals if goal.get("status", "active") == "active"
+            ).lower()
             candidates = [
                 action
                 for action in context.available_actions
@@ -111,6 +114,44 @@ class DeterministicNPCBackend:
                     })],
                 )
             return NPCResponse("I have no useful action to take right now.")
+        if any(
+            phrase in lowered
+            for phrase in ("what now", "how do you feel", "what happened", "outcome")
+        ):
+            resolved_goal = next(
+                (
+                    goal for goal in context.goals
+                    if goal.get("status", "active") != "active"
+                ),
+                None,
+            )
+            if resolved_goal is not None:
+                history = resolved_goal.get("history", [])
+                reason = (
+                    history[-1].get("reason", resolved_goal["description"])
+                    if history else resolved_goal["description"]
+                )
+                reactions = {
+                    "completed": "We accomplished what mattered to me.",
+                    "failed": "This is not the outcome I fought for.",
+                    "abandoned": "That goal no longer has a path forward.",
+                }
+                player_relationship = next(
+                    (
+                        item for item in context.relationships
+                        if item["target_id"] == "player"
+                    ),
+                    None,
+                )
+                attitude = ""
+                if player_relationship is not None:
+                    if float(player_relationship["trust"]) >= 0.35:
+                        attitude = " I trust your part in what happened."
+                    elif float(player_relationship["trust"]) <= -0.1:
+                        attitude = " Your part in this has damaged my trust."
+                return NPCResponse(
+                    f"{reactions[resolved_goal['status']]} {reason}{attitude}"
+                )
         interaction = next(
             (
                 action for action in context.available_actions

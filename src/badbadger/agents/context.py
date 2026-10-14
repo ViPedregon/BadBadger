@@ -65,7 +65,7 @@ class NPCContextBuilder:
             available_disclosures=self.repository.disclosure_affordances(
                 npc_id, self.repository.get_player()["id"]
             ),
-            goals=self.repository.goals_for(npc_id),
+            goals=self.repository.goals_for(npc_id, include_resolved=True),
             parameters=self.repository.npc_parameters(npc_id),
             available_actions=[
                 {

@@ -27,8 +27,23 @@ def _arrival(repository: GameRepository, payload: dict[str, Any]) -> str:
     actor=repository.get_character(payload['character_id']); player=repository.get_player()
     return f"{actor['name']} arrives." if player['location_id']==payload['destination_id'] else ""
 
+def _set_simulation_status(
+    repository: GameRepository, payload: dict[str, Any]
+) -> str:
+    status = payload["status"]
+    if status not in {"succeeded", "failed", "ended"}:
+        raise ValueError(f"Invalid terminal simulation status: {status}")
+    repository.connection.execute(
+        "UPDATE simulation SET status=? WHERE id=1", (status,)
+    )
+    return payload.get("visible_message", "The mission concludes.")
 
-EVENT_HANDLERS: dict[str, EventHandler] = {"set_fact": _set_fact,"character_arrival":_arrival}
+
+EVENT_HANDLERS: dict[str, EventHandler] = {
+    "set_fact": _set_fact,
+    "character_arrival": _arrival,
+    "set_simulation_status": _set_simulation_status,
+}
 
 
 def process_due_events(repository: GameRepository) -> list[str]:

@@ -16,6 +16,7 @@ The current slice includes:
 - persistent NPC goals with stable ids, priorities, lifecycle status, and
   append-only resolution history;
 - directional NPC trust and affinity with an append-only change history;
+- relationship-driven action scoring and consequence-driven attitude changes;
 - trust-gated private disclosures and requested NPC cooperation;
 - autonomous, engine-validated NPC-to-NPC belief sharing;
 - explainable belief-, personality-, and memory-driven scoring for autonomous
@@ -87,6 +88,10 @@ offline path is `go to Relay Chamber`, followed by
 ask what each character knows before deciding whom to inform or encourage.
 The opening decision schedule leaves enough time to question multiple NPCs;
 ordinary information requests cannot authorize an irreversible interaction.
+After a decisive action, the simulation remains active for a ten-minute
+aftermath. Ask affected characters `what now?` or `how do you feel?` to hear
+reactions grounded in their resolved goals, or inspect them directly. A
+validated scheduled event ends the chapter after that window.
 
 Scenario `appearance` objects establish repeatable character and location
 details for future image prompts. They are descriptive inputs, not hidden truth;
@@ -123,6 +128,11 @@ and `affinity` values from -1 to 1. An NPC backend may propose small changes
 during dialogue, but the engine accepts at most ±0.25 per exchange, requires a
 reason, and rejects targets the NPC cannot currently see. Relationship state
 and its change history persist in SQLite and are available through `npc <name>`.
+Decision policies may also score actions from a specific directional trust or
+affinity threshold. Validated action effects can change relationships as world
+consequences, with separate action provenance; effects marked
+`when_requested_by_player` apply only when the player actually requested that
+choice, so autonomous NPC decisions do not silently blame or credit the player.
 
 Scenario-defined disclosures keep their actual content in authoritative engine
 storage. NPC backends receive only a topic, request phrases, and current
