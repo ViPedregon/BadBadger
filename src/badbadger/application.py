@@ -183,9 +183,15 @@ class GameApplication:
         if not parameters:
             lines.append("  (none)")
         lines.append("Goals:")
-        goals = self.repository.goals_for(npc["id"])
+        goals = self.repository.goals_for(npc["id"], include_resolved=True)
         lines.extend(
-            f"  [{goal['priority']}] {goal['description']}" for goal in goals
+            f"  [{goal['priority']}] {goal['goal_id']} ({goal['status']}): "
+            f"{goal['description']}"
+            + (
+                f"\n    Latest: {goal['history'][-1]['reason']}"
+                if goal["history"] and goal["status"] != "active" else ""
+            )
+            for goal in goals
         )
         if not goals:
             lines.append("  (none)")
@@ -268,7 +274,10 @@ def open_prototype(
                 with repository.transaction():
                     repository.add_connection("room_a", "room_b", 5)
                     repository.add_connection("room_b", "room_a", 5)
-                    repository.add_goal("npc", "Inspect Room B when an opportunity arises.", 1)
+                    repository.add_goal(
+                        "npc", "inspect_room_b",
+                        "Inspect Room B when an opportunity arises.", 1,
+                    )
                     if not repository.npc_parameters("npc"):
                         repository.set_npc_parameters("npc", {
                             "autonomy_enabled": True,

@@ -129,11 +129,27 @@ CREATE TABLE IF NOT EXISTS character_activities (
 CREATE TABLE IF NOT EXISTS npc_goals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     character_id TEXT NOT NULL REFERENCES characters(id),
+    goal_id TEXT,
     description TEXT NOT NULL,
     priority INTEGER NOT NULL DEFAULT 1,
     active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active','completed','failed','abandoned')),
     UNIQUE(character_id, description)
 );
+
+CREATE TABLE IF NOT EXISTS npc_goal_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    goal_row_id INTEGER NOT NULL REFERENCES npc_goals(id) ON DELETE CASCADE,
+    game_time INTEGER NOT NULL,
+    status TEXT NOT NULL
+        CHECK(status IN ('active','completed','failed','abandoned')),
+    reason TEXT NOT NULL,
+    source_action_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS goal_events_by_goal
+ON npc_goal_events(goal_row_id, id);
 
 CREATE INDEX IF NOT EXISTS due_events
 ON scheduled_events(status, due_time, id);

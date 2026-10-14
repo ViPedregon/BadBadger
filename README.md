@@ -13,10 +13,13 @@ The current slice includes:
 - deterministic movement, examination, and waiting;
 - persistent NPC dialogue with character-scoped context and beliefs;
 - persistent, character-scoped episodic memories from witnessed events;
+- persistent NPC goals with stable ids, priorities, lifecycle status, and
+  append-only resolution history;
 - directional NPC trust and affinity with an append-only change history;
 - trust-gated private disclosures and requested NPC cooperation;
 - autonomous, engine-validated NPC-to-NPC belief sharing;
-- explainable belief-driven scoring for autonomous consequential actions;
+- explainable belief-, personality-, and memory-driven scoring for autonomous
+  consequential actions;
 - append-only belief evidence with source provenance and deterministic
   contradiction resolution;
 - bounded NPC decision events that can produce independently validated actions;
@@ -139,11 +142,18 @@ exchanges produce no player narration or knowledge; a player in the room hears
 the exchange and gains corresponding hearsay evidence.
 
 Scenario actions may define a base decision score, a minimum autonomous score,
-and belief-based modifiers. The engine evaluates these only from the deciding
-NPC's resolved beliefs, includes human-readable reasons in filtered context and
-decision history, and rechecks eligibility before applying an autonomous
-action. Player requests remain a separate path with their own trust gates. Use
-`npc <name>` to inspect the current score and the beliefs affecting it.
+and modifiers based on resolved beliefs, inspectable NPC parameters, or scoped
+episodic memories. Parameter factors support exact matches and numeric `gte` or
+`lte` comparisons, allowing traits such as risk tolerance to have deterministic
+gameplay effects. Memory factors match authored event kind, subject, source,
+salience, and optional recency without searching prose or reading hidden facts.
+Goal factors multiply an authored score by the matching goal's priority and can
+require a lifecycle status. Validated action effects may complete, fail, or
+abandon goals for any NPC, retaining the reason and source action. The engine
+includes human-readable reasons in filtered context and decision history, then
+rechecks eligibility before applying an autonomous action. Player requests
+remain a separate path with their own trust gates. Use `npc <name>` to inspect
+the current score, goal outcomes, and the state affecting them.
 
 Hearsay confidence is calibrated by the listener's directional trust in the
 speaker before it becomes evidence. Neutral trust preserves 62.5% of claimed

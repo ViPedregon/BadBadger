@@ -19,7 +19,7 @@
         "decision_cooldown_minutes": 10,
         "first_decision_after_minutes": 3
       },
-      "goals": [{"description": "Inspect Room B when an opportunity arises.", "priority": 1}],
+      "goals": [{"id": "inspect_room_b", "description": "Inspect Room B when an opportunity arises.", "priority": 1}],
       "beliefs": [{"subject_id": "room_b", "predicate": "is_safe", "value": true, "confidence": 0.6}]
     }
   ],

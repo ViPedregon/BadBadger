@@ -42,6 +42,27 @@ class GameRepository:
     def create_schema(self) -> None:
         schema = files("badbadger.db").joinpath("schema.sql").read_text(encoding="utf-8")
         self.connection.executescript(schema)
+        goal_columns = {
+            row["name"]
+            for row in self.connection.execute("PRAGMA table_info(npc_goals)")
+        }
+        if "goal_id" not in goal_columns:
+            self.connection.execute("ALTER TABLE npc_goals ADD COLUMN goal_id TEXT")
+        if "status" not in goal_columns:
+            self.connection.execute(
+                "ALTER TABLE npc_goals ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"
+            )
+        self.connection.execute(
+            "UPDATE npc_goals SET goal_id='legacy_' || id WHERE goal_id IS NULL"
+        )
+        self.connection.execute(
+            "UPDATE npc_goals SET status=CASE WHEN active=1 THEN 'active' ELSE 'abandoned' END "
+            "WHERE status IS NULL OR status=''"
+        )
+        self.connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS npc_goals_by_stable_id "
+            "ON npc_goals(character_id, goal_id)"
+        )
         self.connection.execute(
             """
             INSERT INTO belief_evidence(
@@ -297,10 +318,66 @@ class GameRepository:
     def _evaluate_action_decision(
         self, character_id: str, policy: dict[str, Any]
     ) -> dict[str, Any]:
-        """Compute an explainable utility from the NPC's resolved beliefs."""
+        """Compute explainable utility from inspectable NPC state."""
         score = float(policy.get("base_score", 1.0))
         minimum = float(policy.get("minimum_score", 0.0))
         reasons = [f"Base score: {score:+.2f}."]
+        parameters = self.npc_parameters(character_id)
+        for factor in policy.get("parameter_factors", []):
+            actual = parameters.get(factor["parameter"])
+            expected = factor["value"]
+            operator = factor.get("operator", "equals")
+            matches = actual == expected
+            if (
+                operator in {"gte", "lte"}
+                and isinstance(actual, (int, float))
+                and not isinstance(actual, bool)
+                and isinstance(expected, (int, float))
+                and not isinstance(expected, bool)
+            ):
+                matches = actual >= expected if operator == "gte" else actual <= expected
+            elif operator != "equals":
+                matches = False
+            if matches:
+                change = float(factor["score"])
+                score += change
+                reasons.append(f"{factor['reason']} ({change:+.2f}).")
+        memories = self.memories_for(character_id)
+        for factor in policy.get("memory_factors", []):
+            matches = any(
+                memory["memory_kind"] == factor["memory_kind"]
+                and (
+                    "subject_id" not in factor
+                    or memory["subject_id"] == factor["subject_id"]
+                )
+                and (
+                    "source_character_id" not in factor
+                    or memory["source_character_id"]
+                    == factor["source_character_id"]
+                )
+                and float(memory["salience"])
+                >= float(factor.get("min_salience", 0.0))
+                and (
+                    "within_minutes" not in factor
+                    or self.current_time - int(memory["game_time"])
+                    <= int(factor["within_minutes"])
+                )
+                for memory in memories
+            )
+            if matches:
+                change = float(factor["score"])
+                score += change
+                reasons.append(f"{factor['reason']} ({change:+.2f}).")
+        goals = {
+            item["goal_id"]: item
+            for item in self.goals_for(character_id, include_resolved=True)
+        }
+        for factor in policy.get("goal_factors", []):
+            goal = goals.get(factor["goal_id"])
+            if goal is not None and goal["status"] == factor.get("status", "active"):
+                change = float(factor["score_per_priority"]) * int(goal["priority"])
+                score += change
+                reasons.append(f"{factor['reason']} ({change:+.2f}).")
         beliefs = {
             (item["subject_id"], item["predicate"]): item
             for item in self.beliefs_for(character_id)
@@ -491,7 +568,7 @@ class GameRepository:
                 character_id, effects.get("decision", {})
             )
             if not decision["autonomous_eligible"]:
-                return False, "The NPC's current beliefs weigh against that action."
+                return False, "The NPC's current priorities weigh against that action."
         if requested_by_player and "player_trust_required" in effects:
             player = self.get_player()
             relationship = self.connection.execute(
@@ -522,6 +599,12 @@ class GameRepository:
                     subject_id=observation.get("subject_id"),
                     source_character_id=character_id,
                 )
+        for goal_effect in effects.get("goals", []):
+            self.set_goal_status(
+                goal_effect["character_id"], goal_effect["goal_id"],
+                goal_effect["status"], goal_effect["reason"],
+                source_action_id=action_id,
+            )
         self.connection.execute("UPDATE npc_actions SET status='used' WHERE id=?", (action_id,))
         return True, str(effects.get("visible_message", f"{row['label']} is complete."))
 
@@ -734,18 +817,80 @@ class GameRepository:
         row=self.connection.execute("SELECT * FROM character_activities WHERE character_id=? AND status='pending'",(character_id,)).fetchone()
         return dict(row) if row else None
 
-    def add_goal(self, character_id: str, description: str, priority: int = 1) -> None:
-        self.connection.execute(
-            "INSERT OR IGNORE INTO npc_goals(character_id,description,priority) VALUES (?,?,?)",
-            (character_id, description, priority),
+    def add_goal(
+        self, character_id: str, goal_id: str, description: str, priority: int = 1
+    ) -> None:
+        cursor = self.connection.execute(
+            "INSERT OR IGNORE INTO npc_goals("
+            "character_id,goal_id,description,priority,status,active"
+            ") VALUES (?,?,?,?,'active',1)",
+            (character_id, goal_id, description, priority),
         )
+        if cursor.rowcount:
+            goal_row = self.connection.execute(
+                "SELECT id FROM npc_goals WHERE character_id=? AND goal_id=?",
+                (character_id, goal_id),
+            ).fetchone()
+            self.connection.execute(
+                "INSERT INTO npc_goal_events("
+                "goal_row_id,game_time,status,reason"
+                ") VALUES (?,?,'active','Scenario-defined starting goal.')",
+                (goal_row["id"], self.current_time),
+            )
 
-    def goals_for(self, character_id: str) -> list[dict[str, Any]]:
-        rows = self.connection.execute(
-            "SELECT description,priority FROM npc_goals WHERE character_id=? AND active=1 ORDER BY priority DESC,id",
-            (character_id,),
-        ).fetchall()
-        return [dict(row) for row in rows]
+    def goals_for(
+        self, character_id: str, *, include_resolved: bool = False
+    ) -> list[dict[str, Any]]:
+        sql = (
+            "SELECT id,goal_id,description,priority,status FROM npc_goals "
+            "WHERE character_id=?"
+        )
+        if not include_resolved:
+            sql += " AND status='active'"
+        sql += " ORDER BY priority DESC,id"
+        rows = self.connection.execute(sql, (character_id,)).fetchall()
+        result = []
+        for row in rows:
+            goal = dict(row)
+            goal["history"] = [dict(event) for event in self.connection.execute(
+                "SELECT game_time,status,reason,source_action_id "
+                "FROM npc_goal_events WHERE goal_row_id=? ORDER BY id",
+                (row["id"],),
+            ).fetchall()]
+            result.append(goal)
+        return result
+
+    def set_goal_status(
+        self,
+        character_id: str,
+        goal_id: str,
+        status: str,
+        reason: str,
+        *,
+        source_action_id: str | None = None,
+    ) -> None:
+        if status not in {"active", "completed", "failed", "abandoned"}:
+            raise ValueError(f"Invalid goal status: {status}")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("Goal status changes require a reason")
+        row = self.connection.execute(
+            "SELECT id,status FROM npc_goals WHERE character_id=? AND goal_id=?",
+            (character_id, goal_id),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Unknown goal: {character_id}.{goal_id}")
+        if row["status"] == status:
+            return
+        self.connection.execute(
+            "UPDATE npc_goals SET status=?,active=? WHERE id=?",
+            (status, int(status == "active"), row["id"]),
+        )
+        self.connection.execute(
+            "INSERT INTO npc_goal_events("
+            "goal_row_id,game_time,status,reason,source_action_id"
+            ") VALUES (?,?,?,?,?)",
+            (row["id"], self.current_time, status, reason, source_action_id),
+        )
 
     def ensure_decision_event(self, character_id: str, due_time: int) -> None:
         exists = self.connection.execute(

@@ -57,6 +57,34 @@ def _validate(data: dict[str, Any]) -> None:
             raise ScenarioError(f"Appearance for character {item['id']} must be an object")
     if sum(item["kind"] == "player" for item in characters) != 1:
         raise ScenarioError("Scenario must define exactly one player")
+    goal_ids_by_character: dict[str, set[str]] = {}
+    for item in characters:
+        goals = item.get("goals", [])
+        if not isinstance(goals, list):
+            raise ScenarioError(f"Goals for {item['id']} must be a list")
+        if goals and item["kind"] != "npc":
+            raise ScenarioError("Only NPCs may define goals")
+        goal_ids: set[str] = set()
+        for index, goal in enumerate(goals, start=1):
+            if not isinstance(goal, dict):
+                raise ScenarioError(f"Invalid goal for {item['id']}")
+            goal_id = goal.get("id", f"goal_{index}")
+            description = goal.get("description")
+            priority = goal.get("priority", 1)
+            if not isinstance(goal_id, str) or not goal_id.strip():
+                raise ScenarioError(f"Goal id for {item['id']} must be non-empty text")
+            if goal_id in goal_ids:
+                raise ScenarioError(f"Duplicate goal id for {item['id']}: {goal_id}")
+            if not isinstance(description, str) or not description.strip():
+                raise ScenarioError(
+                    f"Goal description for {item['id']} must be non-empty text"
+                )
+            if not isinstance(priority, int) or isinstance(priority, bool) or priority < 1:
+                raise ScenarioError(
+                    f"Goal priority for {item['id']} must be a positive integer"
+                )
+            goal_ids.add(goal_id)
+        goal_ids_by_character[item["id"]] = goal_ids
     for item in characters:
         relationships = item.get("relationships", [])
         if not isinstance(relationships, list):
@@ -204,6 +232,126 @@ def _validate(data: dict[str, Any]) -> None:
                 raise ScenarioError(
                     f"Belief factor confidence for action {action['id']} must be between 0 and 1"
                 )
+        parameter_factors = decision.get("parameter_factors", [])
+        if not isinstance(parameter_factors, list):
+            raise ScenarioError(
+                f"Parameter factors for action {action['id']} must be a list"
+            )
+        for factor in parameter_factors:
+            if not isinstance(factor, dict) or not all(
+                key in factor
+                for key in ("parameter", "operator", "value", "score", "reason")
+            ):
+                raise ScenarioError(f"Invalid parameter factor for action {action['id']}")
+            if not all(
+                isinstance(factor[key], str) and factor[key].strip()
+                for key in ("parameter", "operator", "reason")
+            ):
+                raise ScenarioError(
+                    f"Parameter factor text for action {action['id']} is invalid"
+                )
+            if factor["operator"] not in {"equals", "gte", "lte"}:
+                raise ScenarioError(
+                    f"Parameter factor operator for action {action['id']} is invalid"
+                )
+            if isinstance(factor["value"], (dict, list)):
+                raise ScenarioError(
+                    f"Parameter factor value for action {action['id']} must be scalar"
+                )
+            if not isinstance(factor["score"], (int, float)) or isinstance(
+                factor["score"], bool
+            ):
+                raise ScenarioError(
+                    f"Parameter factor score for action {action['id']} is invalid"
+                )
+            if factor["operator"] in {"gte", "lte"} and (
+                not isinstance(factor["value"], (int, float))
+                or isinstance(factor["value"], bool)
+            ):
+                raise ScenarioError(
+                    f"Ordered parameter factor for action {action['id']} requires a numeric value"
+                )
+        memory_factors = decision.get("memory_factors", [])
+        if not isinstance(memory_factors, list):
+            raise ScenarioError(
+                f"Memory factors for action {action['id']} must be a list"
+            )
+        for factor in memory_factors:
+            if not isinstance(factor, dict) or not all(
+                key in factor for key in ("memory_kind", "score", "reason")
+            ):
+                raise ScenarioError(f"Invalid memory factor for action {action['id']}")
+            if not all(
+                isinstance(factor[key], str) and factor[key].strip()
+                for key in ("memory_kind", "reason")
+            ):
+                raise ScenarioError(
+                    f"Memory factor text for action {action['id']} is invalid"
+                )
+            for key in ("subject_id", "source_character_id"):
+                if key in factor and (
+                    not isinstance(factor[key], str) or not factor[key].strip()
+                ):
+                    raise ScenarioError(
+                        f"Memory factor {key} for action {action['id']} is invalid"
+                    )
+            if (
+                "source_character_id" in factor
+                and factor["source_character_id"] not in character_ids
+            ):
+                raise ScenarioError(
+                    f"Memory factor for action {action['id']} references unknown character"
+                )
+            if not isinstance(factor["score"], (int, float)) or isinstance(
+                factor["score"], bool
+            ):
+                raise ScenarioError(
+                    f"Memory factor score for action {action['id']} is invalid"
+                )
+            salience = factor.get("min_salience", 0.0)
+            if (
+                not isinstance(salience, (int, float))
+                or isinstance(salience, bool)
+                or not 0 <= salience <= 1
+            ):
+                raise ScenarioError(
+                    f"Memory factor salience for action {action['id']} must be between 0 and 1"
+                )
+            within = factor.get("within_minutes")
+            if within is not None and (
+                not isinstance(within, int) or isinstance(within, bool) or within < 0
+            ):
+                raise ScenarioError(
+                    f"Memory factor window for action {action['id']} must be a non-negative integer"
+                )
+        goal_factors = decision.get("goal_factors", [])
+        if not isinstance(goal_factors, list):
+            raise ScenarioError(f"Goal factors for action {action['id']} must be a list")
+        for factor in goal_factors:
+            if not isinstance(factor, dict) or not all(
+                key in factor for key in ("goal_id", "score_per_priority", "reason")
+            ):
+                raise ScenarioError(f"Invalid goal factor for action {action['id']}")
+            if factor["goal_id"] not in goal_ids_by_character[action["character_id"]]:
+                raise ScenarioError(
+                    f"Goal factor for action {action['id']} references unknown actor goal"
+                )
+            if not isinstance(factor["reason"], str) or not factor["reason"].strip():
+                raise ScenarioError(
+                    f"Goal factor reason for action {action['id']} is invalid"
+                )
+            if not isinstance(factor["score_per_priority"], (int, float)) or isinstance(
+                factor["score_per_priority"], bool
+            ):
+                raise ScenarioError(
+                    f"Goal factor score for action {action['id']} is invalid"
+                )
+            if factor.get("status", "active") not in {
+                "active", "completed", "failed", "abandoned"
+            }:
+                raise ScenarioError(
+                    f"Goal factor status for action {action['id']} is invalid"
+                )
         trust_required = effects.get("player_trust_required")
         if trust_required is not None and (
             not isinstance(trust_required, (int, float))
@@ -225,6 +373,31 @@ def _validate(data: dict[str, Any]) -> None:
             salience = observation.get("salience", 0.5)
             if not isinstance(salience, (int, float)) or not 0 <= salience <= 1:
                 raise ScenarioError(f"Invalid observation salience for action {action['id']}")
+        goal_effects = effects.get("goals", [])
+        if not isinstance(goal_effects, list):
+            raise ScenarioError(f"Goal effects for action {action['id']} must be a list")
+        for goal_effect in goal_effects:
+            if not isinstance(goal_effect, dict) or not all(
+                key in goal_effect
+                for key in ("character_id", "goal_id", "status", "reason")
+            ):
+                raise ScenarioError(f"Invalid goal effect for action {action['id']}")
+            target_id = goal_effect["character_id"]
+            if (
+                target_id not in goal_ids_by_character
+                or goal_effect["goal_id"] not in goal_ids_by_character[target_id]
+            ):
+                raise ScenarioError(
+                    f"Goal effect for action {action['id']} references unknown goal"
+                )
+            if goal_effect["status"] not in {"completed", "failed", "abandoned"}:
+                raise ScenarioError(
+                    f"Goal effect status for action {action['id']} is invalid"
+                )
+            if not isinstance(goal_effect["reason"], str) or not goal_effect["reason"].strip():
+                raise ScenarioError(
+                    f"Goal effect reason for action {action['id']} is invalid"
+                )
         if effects.get("simulation_status") not in {
             None, "active", "succeeded", "failed", "ended"
         }:
@@ -262,8 +435,11 @@ def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
                     repository.set_appearance(item["id"], "character", item["appearance"])
                 if item["kind"] == "npc":
                     repository.set_npc_parameters(item["id"], item.get("parameters", {}))
-                    for goal in item.get("goals", []):
-                        repository.add_goal(item["id"], goal["description"], goal.get("priority", 1))
+                    for index, goal in enumerate(item.get("goals", []), start=1):
+                        repository.add_goal(
+                            item["id"], goal.get("id", f"goal_{index}"),
+                            goal["description"], goal.get("priority", 1),
+                        )
                     for belief in item.get("beliefs", []):
                         repository.set_belief(
                             item["id"], belief["subject_id"], belief["predicate"],

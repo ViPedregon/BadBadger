@@ -2,6 +2,7 @@
 
 import tempfile
 import json
+import sqlite3
 import unittest
 from importlib.resources import as_file, files
 from types import SimpleNamespace
@@ -195,6 +196,24 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertEqual(
                 app.repository.get_fact("crisis", "outcome"), "distress_broadcast"
             )
+            orr_goal = app.repository.goals_for(
+                "orr", include_resolved=True
+            )[0]
+            sable_goal = app.repository.goals_for(
+                "sable", include_resolved=True
+            )[0]
+            lin_goal = app.repository.goals_for(
+                "lin", include_resolved=True
+            )[0]
+            self.assertEqual(orr_goal["status"], "completed")
+            self.assertEqual(sable_goal["status"], "failed")
+            self.assertEqual(lin_goal["status"], "failed")
+            self.assertEqual(
+                orr_goal["history"][-1]["source_action_id"], "orr_broadcast"
+            )
+            inspected = app.inspect_npc("Technician Orr")[0]
+            self.assertIn("broadcast_rescue (completed)", inspected)
+            self.assertIn("received a rescue acknowledgment", inspected)
             with app.repository.transaction():
                 app.repository.move_character("lin", "relay")
             self.assertEqual(app.repository.available_npc_actions("lin"), [])
@@ -206,6 +225,12 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertEqual(
                 resumed.repository.get_fact("crisis", "outcome"),
                 "distress_broadcast",
+            )
+            self.assertEqual(
+                resumed.repository.goals_for(
+                    "orr", include_resolved=True
+                )[0]["status"],
+                "completed",
             )
             resumed.repository.close()
 
@@ -331,6 +356,14 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertEqual(initial["id"], "orr_broadcast")
             self.assertAlmostEqual(initial["decision_score"], 1.1)
             self.assertTrue(initial["autonomous_eligible"])
+            self.assertTrue(any(
+                "prioritizes reaching rescue" in reason
+                for reason in initial["decision_reasons"]
+            ))
+            self.assertTrue(any(
+                "risk tolerance" in reason
+                for reason in initial["decision_reasons"]
+            ))
 
             with app.repository.transaction():
                 app.repository.move_character("lin", "relay")
@@ -354,11 +387,113 @@ class VerticalSliceTests(unittest.TestCase):
                     autonomous=True,
                 )
             self.assertFalse(accepted)
-            self.assertIn("beliefs weigh against", message)
+            self.assertIn("priorities weigh against", message)
             self.assertEqual(app.repository.simulation_status, "active")
             inspected, _ = app.handle("npc Technician Orr")
-            self.assertIn("score=0.10, minimum=0.50, eligible=False", inspected[0])
+            self.assertIn("score=0.10, minimum=0.60, eligible=False", inspected[0])
             self.assertIn("endanger containment", inspected[0])
+            app.repository.close()
+
+    def test_personality_parameter_changes_autonomous_decision(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+
+            willing = app.repository.available_npc_actions("orr")[0]
+            self.assertAlmostEqual(willing["decision_score"], 1.1)
+            self.assertTrue(willing["autonomous_eligible"])
+
+            with app.repository.transaction():
+                parameters = app.repository.npc_parameters("orr")
+                parameters["risk_tolerance"] = 0.2
+                app.repository.set_npc_parameters("orr", parameters)
+
+            hesitant = app.repository.available_npc_actions("orr")[0]
+            self.assertAlmostEqual(hesitant["decision_score"], 0.5)
+            self.assertFalse(hesitant["autonomous_eligible"])
+            self.assertFalse(any(
+                "risk tolerance" in reason
+                for reason in hesitant["decision_reasons"]
+            ))
+            with app.repository.transaction():
+                accepted, message = app.repository.apply_npc_action(
+                    "orr", "orr_broadcast", autonomous=True
+                )
+            self.assertFalse(accepted)
+            self.assertIn("priorities weigh against", message)
+            self.assertFalse(app.repository.get_fact("crisis", "resolved"))
+            app.repository.close()
+
+    def test_witnessed_memory_changes_autonomous_decision_until_it_expires(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "memory-decision.json"
+            source.write_text(json.dumps({
+                "scenario_id": "memory-decision",
+                "locations": [
+                    {"id": "lab", "name": "Lab", "description": "A lab."},
+                ],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player",
+                     "location_id": "lab"},
+                    {"id": "source", "kind": "npc", "name": "Source",
+                     "location_id": "lab"},
+                    {"id": "witness", "kind": "npc", "name": "Witness",
+                     "location_id": "lab"},
+                ],
+                "npc_actions": [
+                    {
+                        "id": "demonstrate", "character_id": "source",
+                        "location_id": "lab", "label": "Demonstrate the alarm",
+                        "description": "Make the alarm visibly sound.",
+                        "effects": {"observations": [{
+                            "kind": "alarm_sounded", "subject_id": "alarm",
+                            "summary": "Source demonstrated the audible alarm.",
+                            "salience": 0.8,
+                        }]},
+                    },
+                    {
+                        "id": "respond", "character_id": "witness",
+                        "location_id": "lab", "label": "Respond to the alarm",
+                        "description": "Act after witnessing the alarm.",
+                        "effects": {"decision": {
+                            "base_score": 0.1, "minimum_score": 0.5,
+                            "memory_factors": [{
+                                "memory_kind": "alarm_sounded",
+                                "subject_id": "alarm",
+                                "source_character_id": "source",
+                                "min_salience": 0.7,
+                                "within_minutes": 5,
+                                "score": 0.6,
+                                "reason": "Witness recently heard Source's alarm",
+                            }],
+                        }},
+                    },
+                ],
+            }), encoding="utf-8")
+            app = open_prototype(Path(temp_dir) / "save.db", scenario=source)
+
+            before = app.repository.available_npc_actions("witness")[0]
+            self.assertAlmostEqual(before["decision_score"], 0.1)
+            self.assertFalse(before["autonomous_eligible"])
+
+            with app.repository.transaction():
+                accepted, _ = app.repository.apply_npc_action(
+                    "source", "demonstrate"
+                )
+            self.assertTrue(accepted)
+            after = app.repository.available_npc_actions("witness")[0]
+            self.assertAlmostEqual(after["decision_score"], 0.7)
+            self.assertTrue(after["autonomous_eligible"])
+            self.assertTrue(any(
+                "recently heard" in reason for reason in after["decision_reasons"]
+            ))
+
+            with app.repository.transaction():
+                app.repository.advance_time(6)
+            expired = app.repository.available_npc_actions("witness")[0]
+            self.assertAlmostEqual(expired["decision_score"], 0.1)
+            self.assertFalse(expired["autonomous_eligible"])
             app.repository.close()
 
     def test_engine_rejects_invented_npc_interaction(self):
@@ -655,6 +790,83 @@ class VerticalSliceTests(unittest.TestCase):
                 "characters": [{"id": "p", "kind": "player", "name": "P", "location_id": "missing"}],
             }), encoding="utf-8")
             with self.assertRaises(ScenarioError):
+                load_scenario(source, Path(temp_dir) / "save.db")
+
+    def test_existing_save_migrates_goals_to_stable_lifecycle_fields(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Path(temp_dir) / "legacy.db"
+            connection = sqlite3.connect(database)
+            connection.execute(
+                "CREATE TABLE npc_goals ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, "
+                "description TEXT NOT NULL, priority INTEGER NOT NULL DEFAULT 1, "
+                "active INTEGER NOT NULL DEFAULT 1, "
+                "UNIQUE(character_id, description))"
+            )
+            connection.execute(
+                "INSERT INTO npc_goals(character_id,description,priority,active) "
+                "VALUES ('npc','Legacy goal',2,1)"
+            )
+            connection.commit()
+            connection.close()
+
+            repository = GameRepository(database)
+            repository.create_schema()
+            goal = repository.goals_for("npc", include_resolved=True)[0]
+            self.assertEqual(goal["goal_id"], "legacy_1")
+            self.assertEqual(goal["status"], "active")
+            repository.close()
+
+    def test_invalid_parameter_decision_factor_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "bad-factor.json"
+            source.write_text(json.dumps({
+                "scenario_id": "bad-factor",
+                "locations": [
+                    {"id": "lab", "name": "Lab", "description": "A lab."},
+                ],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player",
+                     "location_id": "lab"},
+                    {"id": "npc", "kind": "npc", "name": "NPC",
+                     "location_id": "lab"},
+                ],
+                "npc_actions": [{
+                    "id": "act", "character_id": "npc", "location_id": "lab",
+                    "label": "Act", "description": "Take an action.",
+                    "effects": {"decision": {"parameter_factors": [{
+                        "parameter": "risk_tolerance", "operator": "approximately",
+                        "value": 0.5, "score": 0.2, "reason": "Invalid operator",
+                    }]}},
+                }],
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ScenarioError, "operator"):
+                load_scenario(source, Path(temp_dir) / "save.db")
+
+    def test_invalid_memory_decision_factor_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "bad-memory-factor.json"
+            source.write_text(json.dumps({
+                "scenario_id": "bad-memory-factor",
+                "locations": [
+                    {"id": "lab", "name": "Lab", "description": "A lab."},
+                ],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player",
+                     "location_id": "lab"},
+                    {"id": "npc", "kind": "npc", "name": "NPC",
+                     "location_id": "lab"},
+                ],
+                "npc_actions": [{
+                    "id": "act", "character_id": "npc", "location_id": "lab",
+                    "label": "Act", "description": "Take an action.",
+                    "effects": {"decision": {"memory_factors": [{
+                        "memory_kind": "warning", "within_minutes": -1,
+                        "score": 0.2, "reason": "Invalid recency window",
+                    }]}},
+                }],
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ScenarioError, "window"):
                 load_scenario(source, Path(temp_dir) / "save.db")
 
     def test_idle_npc_makes_bounded_independent_decision(self):
