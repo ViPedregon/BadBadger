@@ -2,6 +2,7 @@
 
 from badbadger.agents.npc import (
     DeterministicNPCBackend,
+    DisclosureProposal,
     FallbackNPCBackend,
     NPCResponse,
     RelationshipProposal,
@@ -9,6 +10,7 @@ from badbadger.agents.npc import (
 
 __all__ = [
     "DeterministicNPCBackend",
+    "DisclosureProposal",
     "FallbackNPCBackend",
     "NPCResponse",
     "RelationshipProposal",

@@ -216,6 +216,17 @@ class GameApplication:
         )
         if not relationships:
             lines.append("  (none)")
+        lines.append("Disclosure topics:")
+        disclosures = self.repository.disclosure_affordances(
+            npc["id"], self.repository.get_player()["id"]
+        )
+        lines.extend(
+            f"  {item['topic']}: "
+            f"{'shared' if item['already_shared'] else 'available' if item['eligible'] else 'withheld'}"
+            for item in disclosures
+        )
+        if not disclosures:
+            lines.append("  (none)")
         return ["\n".join(lines)]
 
 

@@ -12,6 +12,7 @@ from badbadger.agents.intent import PlayerIntent
 from badbadger.agents.npc import (
     ActionProposal,
     DeterministicNPCBackend,
+    DisclosureProposal,
     FallbackNPCBackend,
     NPCResponse,
     RelationshipProposal,
@@ -120,6 +121,8 @@ class VerticalSliceTests(unittest.TestCase):
             app.handle("go to Relay Chamber")
             with app.repository.transaction():
                 app.repository.move_character("lin", "relay")
+            app.handle("tell Technician Orr thank you")
+            app.handle("tell Technician Orr thanks")
             app.handle("tell Technician Orr broadcast the distress packet")
 
             orr_memories = app.repository.memories_for("orr")
@@ -182,6 +185,8 @@ class VerticalSliceTests(unittest.TestCase):
             with as_file(resource) as scenario:
                 app = open_prototype(database, scenario=scenario)
             app.handle("go to Relay Chamber")
+            app.handle("tell Technician Orr thank you")
+            app.handle("tell Technician Orr thanks")
             messages, _ = app.handle(
                 "tell Technician Orr broadcast the distress packet"
             )
@@ -203,6 +208,80 @@ class VerticalSliceTests(unittest.TestCase):
                 "distress_broadcast",
             )
             resumed.repository.close()
+
+    def test_private_disclosure_and_cooperation_require_earned_trust(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Path(temp_dir) / "save.db"
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(database, scenario=scenario)
+            app.handle("go to Relay Chamber")
+
+            context = NPCContextBuilder(app.repository).build("orr")
+            self.assertNotIn("mission minute twelve", repr(context))
+            self.assertFalse(context.available_disclosures[0]["eligible"])
+
+            refused, _ = app.handle("ask Technician Orr about the distress signal")
+            self.assertTrue(any("don't know you well enough" in item for item in refused))
+            self.assertFalse(any(
+                belief["predicate"] == "final_window_minute"
+                for belief in app.repository.beliefs_for("player")
+            ))
+            refused_action, _ = app.handle(
+                "tell Technician Orr broadcast the distress packet"
+            )
+            self.assertTrue(any("does not trust you enough" in item for item in refused_action))
+            self.assertEqual(app.repository.simulation_status, "active")
+
+            app.handle("tell Technician Orr thank you")
+            app.handle("tell Technician Orr thanks")
+            shared, _ = app.handle("ask Technician Orr about the distress signal")
+            self.assertTrue(any("mission minute twelve" in item for item in shared))
+            player_belief = next(
+                belief for belief in app.repository.beliefs_for("player")
+                if belief["predicate"] == "final_window_minute"
+            )
+            self.assertEqual(player_belief["value"], 12)
+            app.repository.close()
+
+            resumed = open_prototype(database)
+            affordance = resumed.repository.disclosure_affordances("orr", "player")[0]
+            self.assertTrue(affordance["already_shared"])
+            inspected, _ = resumed.handle("npc Technician Orr")
+            self.assertIn("handshake window: shared", inspected[0])
+            resumed.repository.close()
+
+    def test_relationship_gain_cannot_unlock_disclosure_in_same_exchange(self):
+        class ManipulativeBackend:
+            def respond(self, context, player_input):
+                return NPCResponse(
+                    "Perhaps I can trust you.",
+                    relationship_updates=[RelationshipProposal(
+                        "player", 0.25, 0, "The player made a persuasive appeal."
+                    )],
+                    disclosure_requests=[DisclosureProposal("orr_rescue_window")],
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(
+                    Path(temp_dir) / "save.db", scenario=scenario,
+                    npc_backend=ManipulativeBackend(),
+                )
+            app.handle("go to Relay Chamber")
+            first, _ = app.handle("ask Technician Orr about the distress signal")
+            self.assertTrue(any("don't know you well enough" in item for item in first))
+            self.assertFalse(any(
+                belief["predicate"] == "final_window_minute"
+                for belief in app.repository.beliefs_for("player")
+            ))
+            relationship = next(
+                item for item in app.repository.relationships_for("orr")
+                if item["target_id"] == "player"
+            )
+            self.assertEqual(relationship["trust"], 0.5)
+            app.repository.close()
 
     def test_information_question_cannot_authorize_consequential_action(self):
         class OvereagerBackend:
@@ -626,6 +705,9 @@ class VerticalSliceTests(unittest.TestCase):
                         target_id="player", trust_delta=0.1,
                         affinity_delta=0.05, reason="A helpful exchange.",
                     )],
+                    disclosure_requests=[SimpleNamespace(
+                        disclosure_id="declared_disclosure",
+                    )],
                 )
                 return SimpleNamespace(output_parsed=parsed)
 
@@ -656,6 +738,10 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertTrue(result.belief_updates[0].value)
             self.assertEqual(result.relationship_updates[0].target_id, "player")
             self.assertEqual(result.relationship_updates[0].trust_delta, 0.1)
+            self.assertEqual(
+                result.disclosure_requests[0].disclosure_id,
+                "declared_disclosure",
+            )
             call = responses.calls[0]
             self.assertEqual(call["model"], "test-model")
             self.assertIs(call["text_format"], object)

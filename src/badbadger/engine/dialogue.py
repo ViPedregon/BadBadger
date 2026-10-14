@@ -47,7 +47,7 @@ class DialogueService:
                         )
                     else:
                         accepted,message=resolve_npc_proposal(
-                            self.repository,npc_id,proposal
+                            self.repository, npc_id, proposal, requested_by_player=True
                         )
                     proposal_results.append({"accepted":accepted,"proposal":proposal.__dict__})
                     if message:
@@ -63,6 +63,17 @@ class DialogueService:
                         source_character_id=player["id"],
                         detail=player_input,
                     )
+                disclosure_results = []
+                for proposal in response.disclosure_requests:
+                    accepted, message = self.repository.resolve_disclosure(
+                        npc_id, player["id"], proposal.disclosure_id
+                    )
+                    disclosure_results.append({
+                        "accepted": accepted,
+                        "disclosure_id": proposal.disclosure_id,
+                    })
+                    if message:
+                        event_messages.append(f'{npc["name"]}: "{message}"')
                 relationship_results = []
                 visible_ids = {
                     character["id"] for character in context.visible_characters
@@ -105,6 +116,7 @@ class DialogueService:
                     "relationship_updates": (
                         relationship_results if not response.degraded else []
                     ),
+                    "disclosures": disclosure_results if not response.degraded else [],
                     "action_proposals": proposal_results if not response.degraded else [],
                 },
             )
@@ -158,3 +170,9 @@ class DialogueService:
                 raise ValueError("Trust changes are limited to 0.25 per exchange")
             if not -0.25 <= proposal.affinity_delta <= 0.25:
                 raise ValueError("Affinity changes are limited to 0.25 per exchange")
+        for proposal in response.disclosure_requests:
+            if (
+                not isinstance(proposal.disclosure_id, str)
+                or not proposal.disclosure_id.strip()
+            ):
+                raise ValueError("Disclosure proposals require an id")

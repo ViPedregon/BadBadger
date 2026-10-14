@@ -28,6 +28,11 @@ class RelationshipProposal:
 
 
 @dataclass(frozen=True)
+class DisclosureProposal:
+    disclosure_id: str
+
+
+@dataclass(frozen=True)
 class ActionProposal:
     kind: str
     parameters: dict[str, Any] = field(default_factory=dict)
@@ -39,6 +44,7 @@ class NPCResponse:
     proposed_actions: list[ActionProposal] = field(default_factory=list)
     belief_updates: list[BeliefProposal] = field(default_factory=list)
     relationship_updates: list[RelationshipProposal] = field(default_factory=list)
+    disclosure_requests: list[DisclosureProposal] = field(default_factory=list)
     degraded: bool = False
 
 
@@ -117,6 +123,19 @@ class DeterministicNPCBackend:
             qualifier = "I believe" if belief["confidence"] < 0.8 else "I'm confident"
             answer = "safe" if belief["value"] else "unsafe"
             return NPCResponse(f"{qualifier} Room B is {answer}.")
+
+        disclosure = next(
+            (
+                item for item in context.available_disclosures
+                if any(term.lower() in lowered for term in item["request_terms"])
+            ),
+            None,
+        )
+        if disclosure is not None:
+            return NPCResponse(
+                "Let me consider what I can tell you.",
+                disclosure_requests=[DisclosureProposal(disclosure["id"])],
+            )
 
         if "lights" in lowered and any(word in lowered for word in ("out", "dark", "off")):
             return NPCResponse(

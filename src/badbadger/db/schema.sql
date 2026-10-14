@@ -54,6 +54,26 @@ CREATE TABLE IF NOT EXISTS npc_actions (
         CHECK(status IN ('available', 'used'))
 );
 
+CREATE TABLE IF NOT EXISTS npc_disclosures (
+    id TEXT PRIMARY KEY,
+    character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    topic TEXT NOT NULL,
+    request_terms_json TEXT NOT NULL,
+    min_trust REAL NOT NULL CHECK(min_trust >= -1 AND min_trust <= 1),
+    content TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    value_json TEXT NOT NULL,
+    confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1)
+);
+
+CREATE TABLE IF NOT EXISTS disclosure_events (
+    disclosure_id TEXT NOT NULL REFERENCES npc_disclosures(id) ON DELETE CASCADE,
+    recipient_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    game_time INTEGER NOT NULL,
+    PRIMARY KEY(disclosure_id, recipient_id)
+);
+
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     subject_id TEXT NOT NULL,

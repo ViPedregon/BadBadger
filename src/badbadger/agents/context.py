@@ -19,6 +19,7 @@ class NPCContext:
     recent_dialogue: list[dict[str, Any]]
     memories: list[dict[str, Any]]
     relationships: list[dict[str, Any]]
+    available_disclosures: list[dict[str, Any]]
     goals: list[dict[str, Any]]
     parameters: dict[str, Any]
     available_actions: list[dict[str, Any]]
@@ -61,6 +62,9 @@ class NPCContextBuilder:
             recent_dialogue=self.repository.recent_dialogue(npc_id),
             memories=self.repository.memories_for(npc_id),
             relationships=self.repository.relationships_for(npc_id),
+            available_disclosures=self.repository.disclosure_affordances(
+                npc_id, self.repository.get_player()["id"]
+            ),
             goals=self.repository.goals_for(npc_id),
             parameters=self.repository.npc_parameters(npc_id),
             available_actions=[

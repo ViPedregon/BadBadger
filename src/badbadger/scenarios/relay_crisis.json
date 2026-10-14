@@ -73,6 +73,16 @@
         {"target_id": "sable", "trust": -0.2, "affinity": -0.15, "reason": "Orr believes Sable's caution may strand the crew."},
         {"target_id": "lin", "trust": 0.3, "affinity": 0.1, "reason": "Orr trusts Lin's science even when they disagree about priorities."}
       ],
+      "disclosures": [
+        {
+          "id": "orr_rescue_window",
+          "topic": "the rescue receiver's narrow handshake window",
+          "request_terms": ["rescue receiver", "distress signal", "handshake", "what do you know"],
+          "min_trust": 0.4,
+          "content": "The rescue receiver only opens its authenticated handshake for one minute. Our next and final window begins at mission minute twelve.",
+          "belief": {"subject_id": "rescue", "predicate": "final_window_minute", "value": 12, "confidence": 0.95}
+        }
+      ],
       "beliefs": [
         {"subject_id": "rescue", "predicate": "is_listening", "value": true, "confidence": 0.9},
         {"subject_id": "sample", "predicate": "is_unstable", "value": false, "confidence": 0.55}
@@ -123,6 +133,7 @@
       "description": "Use the transmitter's remaining power to call the listening rescue ship.",
       "preconditions": [{"subject_id": "crisis", "predicate": "resolved", "equals": false}],
       "effects": {
+        "player_trust_required": 0.4,
         "facts": [
           {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
           {"subject_id": "crisis", "predicate": "outcome", "value": "distress_broadcast", "hidden": true}

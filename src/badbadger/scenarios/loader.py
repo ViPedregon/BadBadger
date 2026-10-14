@@ -91,6 +91,62 @@ def _validate(data: dict[str, Any]) -> None:
             raise ScenarioError("Connection references an unknown location")
         if not isinstance(connection.get("minutes"), int) or connection["minutes"] < 1:
             raise ScenarioError("Connection minutes must be a positive integer")
+    disclosure_ids: set[str] = set()
+    for item in characters:
+        disclosures = item.get("disclosures", [])
+        if not isinstance(disclosures, list):
+            raise ScenarioError(f"Disclosures for {item['id']} must be a list")
+        if disclosures and item["kind"] != "npc":
+            raise ScenarioError("Only NPCs may define disclosures")
+        for disclosure in disclosures:
+            if not isinstance(disclosure, dict):
+                raise ScenarioError(f"Invalid disclosure for {item['id']}")
+            for key in ("id", "topic", "content"):
+                _required(disclosure, key, str)
+                if not disclosure[key].strip():
+                    raise ScenarioError(
+                        f"Disclosure {key} for {item['id']} cannot be empty"
+                    )
+            if disclosure["id"] in disclosure_ids:
+                raise ScenarioError(f"Duplicate disclosure id: {disclosure['id']}")
+            disclosure_ids.add(disclosure["id"])
+            terms = disclosure.get("request_terms", [])
+            if not isinstance(terms, list) or not terms or not all(
+                isinstance(term, str) and term.strip() for term in terms
+            ):
+                raise ScenarioError(
+                    f"Disclosure terms for {disclosure['id']} must be non-empty text"
+                )
+            min_trust = disclosure.get("min_trust", 0.0)
+            if (
+                not isinstance(min_trust, (int, float))
+                or isinstance(min_trust, bool)
+                or not -1 <= min_trust <= 1
+            ):
+                raise ScenarioError(
+                    f"Disclosure trust for {disclosure['id']} must be between -1 and 1"
+                )
+            belief = disclosure.get("belief")
+            if not isinstance(belief, dict) or not all(
+                key in belief for key in ("subject_id", "predicate", "value")
+            ):
+                raise ScenarioError(f"Invalid belief for disclosure {disclosure['id']}")
+            if not all(
+                isinstance(belief[key], str) and belief[key].strip()
+                for key in ("subject_id", "predicate")
+            ):
+                raise ScenarioError(
+                    f"Disclosure belief ids for {disclosure['id']} must be non-empty text"
+                )
+            confidence = belief.get("confidence", 1.0)
+            if (
+                not isinstance(confidence, (int, float))
+                or isinstance(confidence, bool)
+                or not 0 <= confidence <= 1
+            ):
+                raise ScenarioError(
+                    f"Disclosure confidence for {disclosure['id']} must be between 0 and 1"
+                )
     for action in data.get("npc_actions", []):
         if not isinstance(action, dict):
             raise ScenarioError("Each NPC action must be an object")
@@ -112,6 +168,15 @@ def _validate(data: dict[str, Any]) -> None:
             ):
                 raise ScenarioError(f"Invalid precondition for action {action['id']}")
         effects = action.get("effects", {})
+        trust_required = effects.get("player_trust_required")
+        if trust_required is not None and (
+            not isinstance(trust_required, (int, float))
+            or isinstance(trust_required, bool)
+            or not -1 <= trust_required <= 1
+        ):
+            raise ScenarioError(
+                f"Player trust requirement for action {action['id']} must be between -1 and 1"
+            )
         if not isinstance(effects.get("facts", []), list):
             raise ScenarioError(f"Fact effects for action {action['id']} must be a list")
         if not isinstance(effects.get("observations", []), list):
@@ -172,6 +237,13 @@ def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
                     decision_after = item.get("parameters", {}).get("first_decision_after_minutes")
                     if isinstance(decision_after, int):
                         repository.ensure_decision_event(item["id"], decision_after)
+                    for disclosure in item.get("disclosures", []):
+                        repository.add_npc_disclosure(
+                            disclosure["id"], item["id"], disclosure["topic"],
+                            disclosure["request_terms"],
+                            float(disclosure.get("min_trust", 0.0)),
+                            disclosure["content"], disclosure["belief"],
+                        )
             for item in characters:
                 for relationship in item.get("relationships", []):
                     repository.set_relationship(

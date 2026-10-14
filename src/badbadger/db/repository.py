@@ -170,6 +170,97 @@ class GameRepository:
             ),
         )
 
+    def add_npc_disclosure(
+        self,
+        disclosure_id: str,
+        character_id: str,
+        topic: str,
+        request_terms: list[str],
+        min_trust: float,
+        content: str,
+        belief: dict[str, Any],
+    ) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO npc_disclosures(
+                id, character_id, topic, request_terms_json, min_trust, content,
+                subject_id, predicate, value_json, confidence
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                disclosure_id, character_id, topic,
+                json.dumps(request_terms, sort_keys=True), min_trust, content,
+                belief["subject_id"], belief["predicate"],
+                json.dumps(belief["value"], sort_keys=True),
+                belief.get("confidence", 1.0),
+            ),
+        )
+
+    def disclosure_affordances(
+        self, character_id: str, recipient_id: str
+    ) -> list[dict[str, Any]]:
+        relationship = self.connection.execute(
+            "SELECT trust FROM relationships WHERE observer_id=? AND target_id=?",
+            (character_id, recipient_id),
+        ).fetchone()
+        trust = float(relationship["trust"]) if relationship else 0.0
+        rows = self.connection.execute(
+            """
+            SELECT id, topic, request_terms_json, min_trust
+            FROM npc_disclosures WHERE character_id=? ORDER BY id
+            """,
+            (character_id,),
+        ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "topic": row["topic"],
+                "request_terms": json.loads(row["request_terms_json"]),
+                "eligible": trust >= float(row["min_trust"]),
+                "already_shared": self.connection.execute(
+                    "SELECT 1 FROM disclosure_events WHERE disclosure_id=? AND recipient_id=?",
+                    (row["id"], recipient_id),
+                ).fetchone() is not None,
+            }
+            for row in rows
+        ]
+
+    def resolve_disclosure(
+        self, character_id: str, recipient_id: str, disclosure_id: str
+    ) -> tuple[bool, str]:
+        row = self.connection.execute(
+            "SELECT * FROM npc_disclosures WHERE id=? AND character_id=?",
+            (disclosure_id, character_id),
+        ).fetchone()
+        if row is None:
+            return False, "That information is unavailable."
+        character = self.get_character(character_id)
+        recipient = self.get_character(recipient_id)
+        if (
+            character is None
+            or recipient is None
+            or character["location_id"] != recipient["location_id"]
+        ):
+            return False, "That information cannot be shared at a distance."
+        relationship = self.connection.execute(
+            "SELECT trust FROM relationships WHERE observer_id=? AND target_id=?",
+            (character_id, recipient_id),
+        ).fetchone()
+        trust = float(relationship["trust"]) if relationship else 0.0
+        if trust < float(row["min_trust"]):
+            return False, "I don't know you well enough to discuss that."
+        self.connection.execute(
+            "INSERT OR IGNORE INTO disclosure_events VALUES (?, ?, ?)",
+            (disclosure_id, recipient_id, self.current_time),
+        )
+        self.set_belief(
+            recipient_id, row["subject_id"], row["predicate"],
+            json.loads(row["value_json"]), float(row["confidence"]),
+            source_type="hearsay", source_character_id=character_id,
+            detail=f"Disclosed by {character_id}: {row['topic']}",
+        )
+        return True, str(row["content"])
+
     def available_npc_actions(self, character_id: str) -> list[dict[str, Any]]:
         character = self.get_character(character_id)
         if character is None:
@@ -198,7 +289,9 @@ class GameRepository:
                 })
         return actions
 
-    def apply_npc_action(self, character_id: str, action_id: str) -> tuple[bool, str]:
+    def apply_npc_action(
+        self, character_id: str, action_id: str, *, requested_by_player: bool = False
+    ) -> tuple[bool, str]:
         """Apply one predeclared interaction after rechecking every constraint."""
         row = self.connection.execute(
             "SELECT * FROM npc_actions WHERE id=? AND character_id=? AND status='available'",
@@ -214,6 +307,15 @@ class GameRepository:
         ):
             return False, "Interaction is not currently available."
         effects = json.loads(row["effects_json"])
+        if requested_by_player and "player_trust_required" in effects:
+            player = self.get_player()
+            relationship = self.connection.execute(
+                "SELECT trust FROM relationships WHERE observer_id=? AND target_id=?",
+                (character_id, player["id"]),
+            ).fetchone()
+            trust = float(relationship["trust"]) if relationship else 0.0
+            if trust < float(effects["player_trust_required"]):
+                return False, f"{character['name']} does not trust you enough to do that."
         for fact in effects.get("facts", []):
             self.set_fact(
                 fact["subject_id"], fact["predicate"], fact["value"],

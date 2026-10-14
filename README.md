@@ -14,6 +14,7 @@ The current slice includes:
 - persistent NPC dialogue with character-scoped context and beliefs;
 - persistent, character-scoped episodic memories from witnessed events;
 - directional NPC trust and affinity with an append-only change history;
+- trust-gated private disclosures and requested NPC cooperation;
 - append-only belief evidence with source provenance and deterministic
   contradiction resolution;
 - bounded NPC decision events that can produce independently validated actions;
@@ -117,6 +118,15 @@ and `affinity` values from -1 to 1. An NPC backend may propose small changes
 during dialogue, but the engine accepts at most ±0.25 per exchange, requires a
 reason, and rejects targets the NPC cannot currently see. Relationship state
 and its change history persist in SQLite and are available through `npc <name>`.
+
+Scenario-defined disclosures keep their actual content in authoritative engine
+storage. NPC backends receive only a topic, request phrases, and current
+eligibility; they may request a disclosure by id but cannot read the secret.
+The engine checks the NPC's pre-exchange trust, reveals authorized content,
+and records the information as a sourced player belief. Scenario interactions
+can separately require player trust when requested in dialogue, while the same
+NPC remains free to choose that action autonomously. The NPC inspector reports
+each topic as `withheld`, `available`, or `shared` without printing its content.
 
 ## Optional OpenAI NPC dialogue
 
