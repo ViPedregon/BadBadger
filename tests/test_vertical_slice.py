@@ -482,7 +482,7 @@ class VerticalSliceTests(unittest.TestCase):
                 if belief["subject_id"] == "signal"
             )
             self.assertTrue(learned["value"])
-            self.assertAlmostEqual(learned["confidence"], 0.72)
+            self.assertAlmostEqual(learned["confidence"], 0.5625)
             relationship = app.repository.relationships_for("listener")[0]
             self.assertEqual(relationship["target_id"], "source")
             self.assertAlmostEqual(relationship["trust"], 0.04)
@@ -515,6 +515,53 @@ class VerticalSliceTests(unittest.TestCase):
                 if belief["subject_id"] == "room_b"
             )
             self.assertTrue(player_belief["value"])
+            self.assertAlmostEqual(player_belief["confidence"], 0.375)
+            engine.repository.close()
+
+    def test_directional_trust_calibrates_hearsay_before_belief_resolution(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = create_prototype(Path(temp_dir) / "save.db")
+            with engine.repository.transaction():
+                engine.repository.add_character("listener", "npc", "Listener", "room_a")
+                engine.repository.set_belief(
+                    "listener", "room_b", "is_safe", False, 0.3,
+                    source_type="initial",
+                )
+                engine.repository.set_relationship(
+                    "listener", "npc", -1.0, 0,
+                    reason="Listener distrusts Observer.",
+                )
+                accepted, _ = engine.repository.share_belief(
+                    "npc", "listener", "room_b", "is_safe"
+                )
+            self.assertTrue(accepted)
+            resolved = next(
+                belief for belief in engine.repository.beliefs_for("listener")
+                if belief["subject_id"] == "room_b"
+            )
+            self.assertFalse(resolved["value"])
+            true_evidence = next(
+                item for item in resolved["evidence"] if item["value"] is True
+            )
+            self.assertAlmostEqual(true_evidence["confidence"], 0.15)
+
+            with engine.repository.transaction():
+                engine.repository.set_relationship(
+                    "listener", "npc", 1.0, 0,
+                    reason="Listener now completely trusts Observer.",
+                )
+                accepted, _ = engine.repository.share_belief(
+                    "npc", "listener", "room_b", "is_safe"
+                )
+            self.assertTrue(accepted)
+            resolved = next(
+                belief for belief in engine.repository.beliefs_for("listener")
+                if belief["subject_id"] == "room_b"
+            )
+            self.assertTrue(resolved["value"])
+            # Supporting evidence totals .75, then resolution discounts it by
+            # the remaining .30 of contrary evidence.
+            self.assertAlmostEqual(resolved["confidence"], 0.75 / 1.3)
             engine.repository.close()
 
     def test_conflicting_npc_information_damages_trust_without_forcing_belief(self):

@@ -145,6 +145,12 @@ decision history, and rechecks eligibility before applying an autonomous
 action. Player requests remain a separate path with their own trust gates. Use
 `npc <name>` to inspect the current score and the beliefs affecting it.
 
+Hearsay confidence is calibrated by the listener's directional trust in the
+speaker before it becomes evidence. Neutral trust preserves 62.5% of claimed
+confidence, complete distrust preserves 25%, and complete trust preserves
+100%. This applies to player-to-NPC claims and autonomous NPC information
+sharing, and the calibration is retained in action or dialogue history.
+
 ## Optional OpenAI NPC dialogue
 
 The default NPC backend remains deterministic and requires no network access.

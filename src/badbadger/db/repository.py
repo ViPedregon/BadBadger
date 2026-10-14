@@ -345,7 +345,9 @@ class GameRepository:
                 existing = target_beliefs.get(
                     (belief["subject_id"], belief["predicate"])
                 )
-                shared_confidence = float(belief["confidence"]) * 0.8
+                shared_confidence = self.hearsay_confidence(
+                    target["id"], character_id, float(belief["confidence"])
+                )["effective_confidence"]
                 if (
                     existing is not None
                     and existing["value"] == belief["value"]
@@ -400,7 +402,10 @@ class GameRepository:
             ),
             None,
         )
-        confidence = float(belief["confidence"]) * 0.8
+        calibration = self.hearsay_confidence(
+            target_id, speaker_id, float(belief["confidence"])
+        )
+        confidence = calibration["effective_confidence"]
         if (
             existing is not None
             and existing["value"] == belief["value"]
@@ -431,9 +436,14 @@ class GameRepository:
         )
         player = self.get_player()
         visible = player["location_id"] == speaker["location_id"]
+        player_calibration = None
         if visible:
+            player_calibration = self.hearsay_confidence(
+                player["id"], speaker_id, float(belief["confidence"])
+            )
             self.set_belief(
-                player["id"], subject_id, predicate, belief["value"], confidence,
+                player["id"], subject_id, predicate, belief["value"],
+                player_calibration["effective_confidence"],
                 source_type="hearsay", source_character_id=speaker_id,
                 detail=f"Overheard {speaker['name']} speaking to {target['name']}.",
             )
@@ -443,7 +453,12 @@ class GameRepository:
                 "target_id": target_id, "subject_id": subject_id,
                 "predicate": predicate,
             },
-            result_data={"accepted": True, "conflict": conflict},
+            result_data={
+                "accepted": True,
+                "conflict": conflict,
+                "calibration": calibration,
+                "player_calibration": player_calibration,
+            },
         )
         message = f"{speaker['name']} tells {target['name']}: {subject_id}.{predicate} is {belief['value']!r}."
         return True, message if visible else ""
@@ -663,6 +678,29 @@ class GameRepository:
             ),
         )
         return {"trust": trust, "affinity": affinity}
+
+    def hearsay_confidence(
+        self, listener_id: str, source_id: str, claimed_confidence: float
+    ) -> dict[str, float]:
+        """Calibrate a claim using the listener's directional trust in its source."""
+        if (
+            not isinstance(claimed_confidence, (int, float))
+            or isinstance(claimed_confidence, bool)
+            or not 0 <= claimed_confidence <= 1
+        ):
+            raise ValueError("Claimed confidence must be between zero and one")
+        relationship = self.connection.execute(
+            "SELECT trust FROM relationships WHERE observer_id=? AND target_id=?",
+            (listener_id, source_id),
+        ).fetchone()
+        trust = float(relationship["trust"]) if relationship else 0.0
+        credibility = 0.625 + (0.375 * trust)
+        return {
+            "claimed_confidence": float(claimed_confidence),
+            "source_trust": trust,
+            "credibility": credibility,
+            "effective_confidence": float(claimed_confidence) * credibility,
+        }
 
     def relationships_for(self, observer_id: str) -> list[dict[str, Any]]:
         rows = self.connection.execute(

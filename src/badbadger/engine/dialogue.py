@@ -52,17 +52,29 @@ class DialogueService:
                     proposal_results.append({"accepted":accepted,"proposal":proposal.__dict__})
                     if message:
                         event_messages.append(message)
+                belief_results = []
                 for proposal in response.belief_updates:
+                    calibration = self.repository.hearsay_confidence(
+                        npc_id, player["id"], proposal.confidence
+                    )
                     self.repository.set_belief(
                         npc_id,
                         proposal.subject_id,
                         proposal.predicate,
                         proposal.value,
-                        proposal.confidence,
+                        calibration["effective_confidence"],
                         source_type="hearsay",
                         source_character_id=player["id"],
-                        detail=player_input,
+                        detail=(
+                            f"{player_input} "
+                            f"(claimed={proposal.confidence:.3f}, "
+                            f"source_trust={calibration['source_trust']:.3f})"
+                        ),
                     )
+                    belief_results.append({
+                        "proposal": proposal.__dict__,
+                        "calibration": calibration,
+                    })
                 disclosure_results = []
                 for proposal in response.disclosure_requests:
                     accepted, message = self.repository.resolve_disclosure(
@@ -112,7 +124,7 @@ class DialogueService:
                 result_data={
                     "dialogue": response.dialogue,
                     "degraded": response.degraded,
-                    "belief_updates": [item.__dict__ for item in response.belief_updates],
+                    "belief_updates": belief_results if not response.degraded else [],
                     "relationship_updates": (
                         relationship_results if not response.degraded else []
                     ),
