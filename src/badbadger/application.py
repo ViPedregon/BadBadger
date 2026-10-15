@@ -227,6 +227,10 @@ class GameApplication:
         if intent.kind == "unknown" and self.intent_interpreter is not None:
             intent = self.intent_interpreter.interpret(context, player_text)
             source = "llm"
+        intent_backend_failed = False
+        consume_failure = getattr(self.intent_interpreter, "consume_failure", None)
+        if callable(consume_failure):
+            intent_backend_failed = bool(consume_failure())
         with self.repository.transaction():
             self.repository.record(
                 "intent_interpreted",
@@ -238,7 +242,13 @@ class GameApplication:
                     "minutes": intent.minutes,
                 },
             )
-        messages = self._execute_intent(intent, player_text)
+        if intent_backend_failed and intent.kind == "unknown":
+            messages = [
+                "AI language interpretation is temporarily unavailable. "
+                "Try a command shown by 'choices', or continue in offline mode."
+            ]
+        else:
+            messages = self._execute_intent(intent, player_text)
         messages.extend(self.autonomy.process_due(call_budget=1))
         return messages, False
 

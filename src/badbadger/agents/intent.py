@@ -120,13 +120,21 @@ class SafeIntentInterpreter:
 
     def __init__(self, primary: IntentInterpreter) -> None:
         self.primary = primary
+        self.failed_last_call = False
 
     def interpret(self, context: PlayerIntentContext, player_input: str) -> PlayerIntent:
+        self.failed_last_call = False
         try:
             return self.primary.interpret(context, player_input)
         except Exception as error:
+            self.failed_last_call = True
             logger.error(
                 "Player-intent backend failed; returning unknown intent (%s)",
                 type(error).__name__,
             )
             return PlayerIntent("unknown")
+
+    def consume_failure(self) -> bool:
+        failed = self.failed_last_call
+        self.failed_last_call = False
+        return failed

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from pathlib import Path
 
 from badbadger.agents.context import NPCContextBuilder
-from badbadger.agents.intent import PlayerIntent
+from badbadger.agents.intent import PlayerIntent, SafeIntentInterpreter
 from badbadger.agents.npc import (
     ActionProposal,
     DeterministicNPCBackend,
@@ -1539,6 +1539,25 @@ class VerticalSliceTests(unittest.TestCase):
 
             self.assertFalse(should_quit)
             self.assertIn("couldn't interpret", messages[0])
+            self.assertEqual(app.repository.current_time, 0)
+            app.repository.close()
+
+    def test_failed_intent_backend_returns_player_safe_recovery_message(self):
+        class FailingInterpreter:
+            def interpret(self, context, player_input):
+                raise RuntimeError("secret provider diagnostic")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = open_prototype(
+                Path(temp_dir) / "save.db",
+                intent_interpreter=SafeIntentInterpreter(FailingInterpreter()),
+            )
+            with self.assertLogs("badbadger.agents.intent", level="ERROR"):
+                messages, _ = app.handle("Please investigate this strange place")
+
+            self.assertIn("temporarily unavailable", messages[0])
+            self.assertIn("choices", messages[0])
+            self.assertNotIn("secret provider diagnostic", messages[0])
             self.assertEqual(app.repository.current_time, 0)
             app.repository.close()
 

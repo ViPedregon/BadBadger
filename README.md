@@ -28,6 +28,8 @@ Without an `OPENAI_API_KEY`, the game automatically uses its deterministic
 offline dialogue. With a key, it uses LLM dialogue and natural-language intent
 interpretation with deterministic fallback. A transient `[Working...]` status
 appears while simulation or AI-backed commands are being processed.
+Provider failures are reported as short recovery guidance in normal player
+mode; technical diagnostics remain available only with `-Developer`.
 
 To create a standalone Windows executable for players who do not have Python:
 

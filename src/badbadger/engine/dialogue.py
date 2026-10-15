@@ -115,7 +115,8 @@ class DialogueService:
                 event_messages.extend(process_due_events(self.repository))
             else:
                 event_messages = [
-                    "(AI backend unavailable; the offline reply did not advance time.)"
+                    "(AI dialogue was temporarily unavailable. This offline reply "
+                    "did not advance time.)"
                 ]
             self.repository.record(
                 "dialogue_resolved",

@@ -93,6 +93,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    logging.basicConfig(
+        level=logging.WARNING if args.developer else logging.CRITICAL,
+        format="%(message)s",
+        force=True,
+    )
     save_exists = args.save.exists() and args.save.stat().st_size > 0
     if args.new_game and args.save.exists():
         args.save.unlink()
@@ -147,5 +152,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.WARNING, format="%(message)s")
     raise SystemExit(main())
