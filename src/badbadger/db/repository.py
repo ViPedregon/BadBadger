@@ -159,6 +159,97 @@ class GameRepository:
         ).fetchone()
         return json.loads(row["details_json"]) if row else {}
 
+    def set_character_canon(
+        self, character_id: str, canon: dict[str, Any]
+    ) -> None:
+        if self.get_character(character_id) is None:
+            raise ValueError(f"Unknown character: {character_id}")
+        self.connection.execute(
+            """
+            INSERT INTO character_canon(
+                character_id,role,voice,values_json,boundaries_json
+            ) VALUES (?,?,?,?,?)
+            ON CONFLICT(character_id) DO UPDATE SET
+                role=excluded.role,
+                voice=excluded.voice,
+                values_json=excluded.values_json,
+                boundaries_json=excluded.boundaries_json
+            """,
+            (
+                character_id,
+                canon.get("role", ""),
+                canon.get("voice", ""),
+                json.dumps(canon.get("values", [])),
+                json.dumps(canon.get("boundaries", [])),
+            ),
+        )
+        self.connection.execute(
+            "DELETE FROM character_biography_fragments WHERE character_id=?",
+            (character_id,),
+        )
+        for fragment in canon.get("biography", []):
+            self.connection.execute(
+                """
+                INSERT INTO character_biography_fragments(
+                    character_id,fragment_id,summary,importance,visibility,
+                    awareness,certainty,topics_json,emotional_tags_json,
+                    related_character_ids_json,period,source
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    character_id, fragment["id"], fragment["summary"],
+                    float(fragment.get("importance", 0.5)),
+                    fragment.get("visibility", "private"),
+                    fragment.get("awareness", "conscious"),
+                    float(fragment.get("certainty", 1.0)),
+                    json.dumps(fragment.get("topics", [])),
+                    json.dumps(fragment.get("emotional_tags", [])),
+                    json.dumps(fragment.get("related_character_ids", [])),
+                    fragment.get("period"), fragment.get("source"),
+                ),
+            )
+
+    def character_canon(self, character_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            "SELECT * FROM character_canon WHERE character_id=?",
+            (character_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "character_id": character_id,
+            "role": row["role"],
+            "voice": row["voice"],
+            "values": json.loads(row["values_json"]),
+            "boundaries": json.loads(row["boundaries_json"]),
+            "biography": self.biography_fragments(character_id),
+        }
+
+    def biography_fragments(self, character_id: str) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT * FROM character_biography_fragments WHERE character_id=? "
+            "ORDER BY importance DESC,fragment_id",
+            (character_id,),
+        ).fetchall()
+        fragments: list[dict[str, Any]] = []
+        for row in rows:
+            fragments.append({
+                "id": row["fragment_id"],
+                "summary": row["summary"],
+                "importance": float(row["importance"]),
+                "visibility": row["visibility"],
+                "awareness": row["awareness"],
+                "certainty": float(row["certainty"]),
+                "topics": json.loads(row["topics_json"]),
+                "emotional_tags": json.loads(row["emotional_tags_json"]),
+                "related_character_ids": json.loads(
+                    row["related_character_ids_json"]
+                ),
+                "period": row["period"],
+                "source": row["source"],
+            })
+        return fragments
+
     def add_connection(self, origin: str, destination: str, minutes: int) -> None:
         self.connection.execute("INSERT OR IGNORE INTO location_connections VALUES (?,?,?)", (origin,destination,minutes))
 

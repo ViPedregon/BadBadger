@@ -141,6 +141,40 @@ future renderers should receive only the current visible state and must never
 write facts back to the simulation. Rendering should run asynchronously so it
 cannot pause the game clock or action loop.
 
+### Character canon
+
+Characters may define durable authored identity separately from mission state:
+
+```json
+"canon": {
+  "role": "retired rescue pilot",
+  "voice": "dry, economical, and precise",
+  "values": ["competence", "protecting crews"],
+  "boundaries": ["never invents certainty"],
+  "biography": [{
+    "id": "failed_evacuations",
+    "summary": "Mara believes command delayed a fatal evacuation.",
+    "importance": 0.95,
+    "visibility": "secret",
+    "awareness": "conscious",
+    "certainty": 0.7,
+    "topics": ["evacuation", "authority"],
+    "emotional_tags": ["guilt", "distrust"],
+    "related_character_ids": ["commander"],
+    "period": "twelve years ago",
+    "source": "authored character canon"
+  }]
+}
+```
+
+Visibility is `public`, `private`, or `secret`; awareness is `conscious`,
+`suppressed`, or `forgotten`. Importance and certainty range from zero to one.
+Scenario loading rejects duplicate ids, invalid related characters, unknown
+fields, and malformed tags. Canon persists with the save and is visible through
+the developer NPC inspector. It is deliberately not included in LLM context
+yet; the next milestone will add bounded, explainable biography retrieval so a
+large biography cannot leak wholesale into every prompt.
+
 Launching it again with the same `--save` path resumes the simulation. The
 current deterministic text interpreter accepts natural-looking forms of the
 small Version 0.1 action vocabulary; an LLM interpreter will later replace it

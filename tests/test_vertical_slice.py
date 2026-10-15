@@ -942,6 +942,86 @@ class VerticalSliceTests(unittest.TestCase):
             )
             app.repository.close()
 
+    def test_character_canon_is_validated_persistent_and_not_yet_prompted(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "canon.json"
+            source.write_text(json.dumps({
+                "scenario_id": "canon-test",
+                "locations": [
+                    {"id": "study", "name": "Study", "description": "Quiet."},
+                ],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player",
+                     "location_id": "study"},
+                    {"id": "mara", "kind": "npc", "name": "Mara Venn",
+                     "location_id": "study", "canon": {
+                         "role": "retired rescue pilot",
+                         "voice": "dry, economical, and precise",
+                         "values": ["competence", "protecting crews"],
+                         "boundaries": ["never invents certainty"],
+                         "biography": [{
+                             "id": "failed_evacuations",
+                             "summary": "Mara believes command delayed a fatal evacuation.",
+                             "importance": 0.95,
+                             "visibility": "secret",
+                             "awareness": "conscious",
+                             "certainty": 0.7,
+                             "topics": ["evacuation", "authority"],
+                             "emotional_tags": ["guilt", "distrust"],
+                             "related_character_ids": ["player"],
+                             "period": "twelve years ago",
+                             "source": "authored character canon"
+                         }]
+                     }}
+                ]
+            }), encoding="utf-8")
+            database = Path(temp_dir) / "save.db"
+            app = open_prototype(database, scenario=source)
+
+            canon = app.repository.character_canon("mara")
+            self.assertEqual(canon["role"], "retired rescue pilot")
+            self.assertEqual(canon["values"], ["competence", "protecting crews"])
+            fragment = canon["biography"][0]
+            self.assertEqual(fragment["id"], "failed_evacuations")
+            self.assertEqual(fragment["visibility"], "secret")
+            self.assertEqual(fragment["topics"], ["evacuation", "authority"])
+            context = NPCContextBuilder(app.repository).build("mara")
+            self.assertNotIn("failed evacuation", repr(context).lower())
+            app.repository.close()
+
+            resumed = open_prototype(database)
+            self.assertEqual(
+                resumed.repository.character_canon("mara")["biography"][0],
+                fragment,
+            )
+            inspected = resumed.inspect_npc("Mara Venn")[0]
+            self.assertIn("retired rescue pilot", inspected)
+            self.assertIn("failed_evacuations", inspected)
+            resumed.repository.close()
+
+    def test_invalid_character_canon_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "bad-canon.json"
+            source.write_text(json.dumps({
+                "scenario_id": "bad-canon",
+                "locations": [
+                    {"id": "room", "name": "Room", "description": "A room."},
+                ],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player",
+                     "location_id": "room"},
+                    {"id": "npc", "kind": "npc", "name": "NPC",
+                     "location_id": "room", "canon": {"biography": [{
+                         "id": "memory", "summary": "A memory.",
+                         "importance": 2,
+                         "related_character_ids": ["missing"]
+                     }]}}
+                ]
+            }), encoding="utf-8")
+
+            with self.assertRaisesRegex(ScenarioError, "importance"):
+                load_scenario(source, Path(temp_dir) / "save.db")
+
     def test_custom_scenario_parameters_control_autonomy(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / "scenario.json"

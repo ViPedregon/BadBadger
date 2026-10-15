@@ -21,6 +21,98 @@ def _required(data: dict[str, Any], key: str, expected: type) -> Any:
     return value
 
 
+def _validate_string_list(value: Any, label: str) -> None:
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item.strip() for item in value
+    ):
+        raise ScenarioError(f"{label} must be a list of non-empty text")
+    if len(set(value)) != len(value):
+        raise ScenarioError(f"{label} cannot contain duplicates")
+
+
+def _validate_character_canon(
+    character: dict[str, Any], character_ids: set[str]
+) -> None:
+    canon = character.get("canon")
+    if canon is None:
+        return
+    if not isinstance(canon, dict):
+        raise ScenarioError(f"Canon for {character['id']} must be an object")
+    allowed = {"role", "voice", "values", "boundaries", "biography"}
+    unknown = set(canon) - allowed
+    if unknown:
+        raise ScenarioError(
+            f"Unknown canon fields for {character['id']}: {sorted(unknown)}"
+        )
+    for key in ("role", "voice"):
+        value = canon.get(key, "")
+        if not isinstance(value, str):
+            raise ScenarioError(f"Canon {key} for {character['id']} must be text")
+    for key in ("values", "boundaries"):
+        _validate_string_list(canon.get(key, []), f"Canon {key} for {character['id']}")
+    biography = canon.get("biography", [])
+    if not isinstance(biography, list):
+        raise ScenarioError(f"Biography for {character['id']} must be a list")
+    fragment_ids: set[str] = set()
+    allowed_fragment = {
+        "id", "summary", "importance", "visibility", "awareness", "certainty",
+        "topics", "emotional_tags", "related_character_ids", "period", "source",
+    }
+    for fragment in biography:
+        if not isinstance(fragment, dict):
+            raise ScenarioError(f"Biography fragments for {character['id']} must be objects")
+        unknown_fragment = set(fragment) - allowed_fragment
+        if unknown_fragment:
+            raise ScenarioError(
+                f"Unknown biography fields for {character['id']}: "
+                f"{sorted(unknown_fragment)}"
+            )
+        for key in ("id", "summary"):
+            if not isinstance(fragment.get(key), str) or not fragment[key].strip():
+                raise ScenarioError(
+                    f"Biography {key} for {character['id']} must be non-empty text"
+                )
+        if fragment["id"] in fragment_ids:
+            raise ScenarioError(
+                f"Duplicate biography id for {character['id']}: {fragment['id']}"
+            )
+        fragment_ids.add(fragment["id"])
+        for key, default in (("importance", 0.5), ("certainty", 1.0)):
+            value = fragment.get(key, default)
+            if (
+                not isinstance(value, (int, float)) or isinstance(value, bool)
+                or not 0 <= value <= 1
+            ):
+                raise ScenarioError(
+                    f"Biography {key} for {character['id']} must be between 0 and 1"
+                )
+        if fragment.get("visibility", "private") not in {
+            "public", "private", "secret"
+        }:
+            raise ScenarioError(f"Invalid biography visibility for {character['id']}")
+        if fragment.get("awareness", "conscious") not in {
+            "conscious", "suppressed", "forgotten"
+        }:
+            raise ScenarioError(f"Invalid biography awareness for {character['id']}")
+        for key in ("topics", "emotional_tags", "related_character_ids"):
+            _validate_string_list(
+                fragment.get(key, []), f"Biography {key} for {character['id']}"
+            )
+        related = set(fragment.get("related_character_ids", []))
+        if not related.issubset(character_ids) or character["id"] in related:
+            raise ScenarioError(
+                f"Biography for {character['id']} references an invalid character"
+            )
+        for key in ("period", "source"):
+            value = fragment.get(key)
+            if value is not None and (
+                not isinstance(value, str) or not value.strip()
+            ):
+                raise ScenarioError(
+                    f"Biography {key} for {character['id']} must be non-empty text"
+                )
+
+
 def _validate(data: dict[str, Any]) -> None:
     presentation = data.get("presentation", {})
     if not isinstance(presentation, dict):
@@ -64,6 +156,8 @@ def _validate(data: dict[str, Any]) -> None:
             raise ScenarioError(f"Appearance for character {item['id']} must be an object")
     if sum(item["kind"] == "player" for item in characters) != 1:
         raise ScenarioError("Scenario must define exactly one player")
+    for item in characters:
+        _validate_character_canon(item, character_ids)
     goal_ids_by_character: dict[str, set[str]] = {}
     for item in characters:
         goals = item.get("goals", [])
@@ -600,6 +694,8 @@ def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
                 repository.add_character(item["id"], item["kind"], item["name"], item["location_id"])
                 if item.get("appearance"):
                     repository.set_appearance(item["id"], "character", item["appearance"])
+                if item.get("canon") is not None:
+                    repository.set_character_canon(item["id"], item["canon"])
                 if item["kind"] == "npc":
                     repository.set_npc_parameters(item["id"], item.get("parameters", {}))
                     for index, goal in enumerate(item.get("goals", []), start=1):

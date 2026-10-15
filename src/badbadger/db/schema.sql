@@ -35,6 +35,37 @@ CREATE TABLE IF NOT EXISTS characters (
 CREATE UNIQUE INDEX IF NOT EXISTS one_player
 ON characters(kind) WHERE kind = 'player';
 
+CREATE TABLE IF NOT EXISTS character_canon (
+    character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT '',
+    voice TEXT NOT NULL DEFAULT '',
+    values_json TEXT NOT NULL DEFAULT '[]',
+    boundaries_json TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS character_biography_fragments (
+    character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    fragment_id TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    importance REAL NOT NULL DEFAULT 0.5
+        CHECK(importance >= 0 AND importance <= 1),
+    visibility TEXT NOT NULL DEFAULT 'private'
+        CHECK(visibility IN ('public','private','secret')),
+    awareness TEXT NOT NULL DEFAULT 'conscious'
+        CHECK(awareness IN ('conscious','suppressed','forgotten')),
+    certainty REAL NOT NULL DEFAULT 1.0
+        CHECK(certainty >= 0 AND certainty <= 1),
+    topics_json TEXT NOT NULL DEFAULT '[]',
+    emotional_tags_json TEXT NOT NULL DEFAULT '[]',
+    related_character_ids_json TEXT NOT NULL DEFAULT '[]',
+    period TEXT,
+    source TEXT,
+    PRIMARY KEY(character_id, fragment_id)
+);
+
+CREATE INDEX IF NOT EXISTS biography_fragments_by_character
+ON character_biography_fragments(character_id, importance DESC, fragment_id);
+
 CREATE TABLE IF NOT EXISTS npc_parameters (
     character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
     parameters_json TEXT NOT NULL DEFAULT '{}'

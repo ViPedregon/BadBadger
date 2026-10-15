@@ -310,8 +310,28 @@ class GameApplication:
             f"Location: {location['name'] if location else npc['location_id']}",
             f"Activity: {activity['kind'] if activity else 'idle'}",
             f"Appearance: {self.repository.appearance_for(npc['id'], 'character')!r}",
-            "Parameters:",
         ]
+        canon = self.repository.character_canon(npc["id"])
+        lines.append("Character canon:")
+        if canon is None:
+            lines.append("  (none)")
+        else:
+            lines.extend([
+                f"  Role: {canon['role'] or '(unspecified)'}",
+                f"  Voice: {canon['voice'] or '(unspecified)'}",
+                "  Values: " + (", ".join(canon["values"]) or "(none)"),
+                "  Boundaries: " + (", ".join(canon["boundaries"]) or "(none)"),
+                "  Biography fragments:",
+            ])
+            for fragment in canon["biography"]:
+                lines.append(
+                    f"    {fragment['id']} [{fragment['visibility']}, "
+                    f"{fragment['awareness']}, importance={fragment['importance']:.2f}, "
+                    f"certainty={fragment['certainty']:.2f}]: {fragment['summary']}"
+                )
+            if not canon["biography"]:
+                lines.append("    (none)")
+        lines.append("Parameters:")
         lines.extend(
             f"  {key}: {value!r}" for key, value in sorted(parameters.items())
         )
