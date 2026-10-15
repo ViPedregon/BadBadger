@@ -942,7 +942,7 @@ class VerticalSliceTests(unittest.TestCase):
             )
             app.repository.close()
 
-    def test_character_canon_is_validated_persistent_and_not_yet_prompted(self):
+    def test_character_canon_is_persistent_and_secret_summary_stays_unprompted(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / "canon.json"
             source.write_text(json.dumps({
@@ -962,6 +962,10 @@ class VerticalSliceTests(unittest.TestCase):
                          "biography": [{
                              "id": "failed_evacuations",
                              "summary": "Mara believes command delayed a fatal evacuation.",
+                             "behavioral_guidance": (
+                                 "Mara becomes guarded when authority or evacuation "
+                                 "timing is discussed."
+                             ),
                              "importance": 0.95,
                              "visibility": "secret",
                              "awareness": "conscious",
@@ -985,8 +989,20 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertEqual(fragment["id"], "failed_evacuations")
             self.assertEqual(fragment["visibility"], "secret")
             self.assertEqual(fragment["topics"], ["evacuation", "authority"])
-            context = NPCContextBuilder(app.repository).build("mara")
+            context = NPCContextBuilder(app.repository).build(
+                "mara", "Ask Mara whether command delayed the evacuation."
+            )
             self.assertNotIn("failed evacuation", repr(context).lower())
+            self.assertIn("becomes guarded", repr(context).lower())
+            self.assertEqual(context.biography[0]["id"], "failed_evacuations")
+            self.assertTrue(context.biography[0]["selection_reasons"])
+            app.handle("ask Mara about authority and evacuation timing")
+            history = app.repository.connection.execute(
+                "SELECT result_json FROM history WHERE record_type='dialogue_resolved' "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            self.assertIn("failed_evacuations", history["result_json"])
+            self.assertNotIn("fatal evacuation", history["result_json"])
             app.repository.close()
 
             resumed = open_prototype(database)
@@ -998,6 +1014,47 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertIn("retired rescue pilot", inspected)
             self.assertIn("failed_evacuations", inspected)
             resumed.repository.close()
+
+    def test_biography_retrieval_is_bounded_and_excludes_inaccessible_memory(self):
+        canon = {
+            "biography": [
+                {
+                    "id": f"rescue_{index}",
+                    "summary": f"Public rescue experience {index}.",
+                    "behavioral_guidance": None,
+                    "importance": 0.9 - index * 0.01,
+                    "visibility": "public",
+                    "awareness": "conscious",
+                    "certainty": 1.0,
+                    "topics": ["rescue"],
+                    "emotional_tags": [],
+                    "related_character_ids": [],
+                }
+                for index in range(5)
+            ] + [{
+                "id": "forgotten_rescue",
+                "summary": "A forgotten rescue secret.",
+                "behavioral_guidance": "React as if this memory were available.",
+                "importance": 1.0,
+                "visibility": "secret",
+                "awareness": "forgotten",
+                "certainty": 1.0,
+                "topics": ["rescue"],
+                "emotional_tags": [],
+                "related_character_ids": [],
+            }]
+        }
+
+        selected = NPCContextBuilder._select_biography(
+            canon, relevance_text="Discuss the rescue plan", visible_ids=set()
+        )
+
+        self.assertEqual(len(selected), 4)
+        self.assertEqual(
+            [item["id"] for item in selected],
+            ["rescue_0", "rescue_1", "rescue_2", "rescue_3"],
+        )
+        self.assertNotIn("forgotten_rescue", repr(selected))
 
     def test_invalid_character_canon_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp_dir:

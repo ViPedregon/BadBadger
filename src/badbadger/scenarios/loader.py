@@ -55,8 +55,9 @@ def _validate_character_canon(
         raise ScenarioError(f"Biography for {character['id']} must be a list")
     fragment_ids: set[str] = set()
     allowed_fragment = {
-        "id", "summary", "importance", "visibility", "awareness", "certainty",
-        "topics", "emotional_tags", "related_character_ids", "period", "source",
+        "id", "summary", "behavioral_guidance", "importance", "visibility",
+        "awareness", "certainty", "topics", "emotional_tags",
+        "related_character_ids", "period", "source",
     }
     for fragment in biography:
         if not isinstance(fragment, dict):
@@ -103,7 +104,7 @@ def _validate_character_canon(
             raise ScenarioError(
                 f"Biography for {character['id']} references an invalid character"
             )
-        for key in ("period", "source"):
+        for key in ("behavioral_guidance", "period", "source"):
             value = fragment.get(key)
             if value is not None and (
                 not isinstance(value, str) or not value.strip()

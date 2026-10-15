@@ -25,7 +25,7 @@ class DialogueService:
         if npc["location_id"] != player["location_id"]:
             return [f"{npc['name']} is not here."]
 
-        context = self.context_builder.build(npc_id)
+        context = self.context_builder.build(npc_id, player_input)
         response = self.backend.respond(context, player_input)
         self._validate_response(response)
 
@@ -125,6 +125,14 @@ class DialogueService:
                 result_data={
                     "dialogue": response.dialogue,
                     "degraded": response.degraded,
+                    "biography_context": [
+                        {
+                            "id": item["id"],
+                            "score": item["score"],
+                            "selection_reasons": item["selection_reasons"],
+                        }
+                        for item in context.biography
+                    ],
                     "belief_updates": belief_results if not response.degraded else [],
                     "relationship_updates": (
                         relationship_results if not response.degraded else []

@@ -50,7 +50,7 @@ class AutonomyScheduler:
             if calls >= call_budget:
                 break
             calls += 1
-            context = self.context_builder.build(npc_id)
+            context = self.context_builder.build(npc_id, "autonomous decision")
             request = (
                 "ENGINE DECISION TICK: Based only on your goals and knowledge, "
                 "propose at most one useful action from available_actions. Copy its "
@@ -110,6 +110,14 @@ class AutonomyScheduler:
                             }
                             for action in context.available_actions
                             if action["kind"] == "speak"
+                        ],
+                        "biography_context": [
+                            {
+                                "id": item["id"],
+                                "score": item["score"],
+                                "selection_reasons": item["selection_reasons"],
+                            }
+                            for item in context.biography
                         ],
                     },
                 )

@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS character_biography_fragments (
     character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
     fragment_id TEXT NOT NULL,
     summary TEXT NOT NULL,
+    behavioral_guidance TEXT,
     importance REAL NOT NULL DEFAULT 0.5
         CHECK(importance >= 0 AND importance <= 1),
     visibility TEXT NOT NULL DEFAULT 'private'

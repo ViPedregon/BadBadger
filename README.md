@@ -154,6 +154,7 @@ Characters may define durable authored identity separately from mission state:
   "biography": [{
     "id": "failed_evacuations",
     "summary": "Mara believes command delayed a fatal evacuation.",
+    "behavioral_guidance": "Mara becomes guarded around authority and evacuation timing.",
     "importance": 0.95,
     "visibility": "secret",
     "awareness": "conscious",
@@ -171,9 +172,18 @@ Visibility is `public`, `private`, or `secret`; awareness is `conscious`,
 `suppressed`, or `forgotten`. Importance and certainty range from zero to one.
 Scenario loading rejects duplicate ids, invalid related characters, unknown
 fields, and malformed tags. Canon persists with the save and is visible through
-the developer NPC inspector. It is deliberately not included in LLM context
-yet; the next milestone will add bounded, explainable biography retrieval so a
-large biography cannot leak wholesale into every prompt.
+the developer NPC inspector.
+
+Stable role, voice, values, and boundaries are included in NPC context.
+Biography retrieval is deterministic and capped at four fragments and 1,600
+guidance characters. Selection considers authored importance, current topics,
+language overlap, and related characters who are present; the selected ids,
+scores, and reasons are retained in decision or dialogue history. Suppressed
+and forgotten fragments are excluded. Public fragments may provide their
+summary, while private and secret fragments provide only separately authored
+`behavioral_guidance`; their underlying summaries never enter the model prompt.
+Actual secret disclosure remains under the existing engine-controlled
+disclosure system.
 
 Launching it again with the same `--save` path resumes the simulation. The
 current deterministic text interpreter accepts natural-looking forms of the

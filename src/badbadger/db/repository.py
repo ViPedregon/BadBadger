@@ -59,6 +59,16 @@ class GameRepository:
             "UPDATE npc_goals SET status=CASE WHEN active=1 THEN 'active' ELSE 'abandoned' END "
             "WHERE status IS NULL OR status=''"
         )
+        biography_columns = {
+            row["name"] for row in self.connection.execute(
+                "PRAGMA table_info(character_biography_fragments)"
+            )
+        }
+        if "behavioral_guidance" not in biography_columns:
+            self.connection.execute(
+                "ALTER TABLE character_biography_fragments "
+                "ADD COLUMN behavioral_guidance TEXT"
+            )
         self.connection.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS npc_goals_by_stable_id "
             "ON npc_goals(character_id, goal_id)"
@@ -191,13 +201,15 @@ class GameRepository:
             self.connection.execute(
                 """
                 INSERT INTO character_biography_fragments(
-                    character_id,fragment_id,summary,importance,visibility,
+                    character_id,fragment_id,summary,behavioral_guidance,
+                    importance,visibility,
                     awareness,certainty,topics_json,emotional_tags_json,
                     related_character_ids_json,period,source
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     character_id, fragment["id"], fragment["summary"],
+                    fragment.get("behavioral_guidance"),
                     float(fragment.get("importance", 0.5)),
                     fragment.get("visibility", "private"),
                     fragment.get("awareness", "conscious"),
@@ -236,6 +248,7 @@ class GameRepository:
             fragments.append({
                 "id": row["fragment_id"],
                 "summary": row["summary"],
+                "behavioral_guidance": row["behavioral_guidance"],
                 "importance": float(row["importance"]),
                 "visibility": row["visibility"],
                 "awareness": row["awareness"],
