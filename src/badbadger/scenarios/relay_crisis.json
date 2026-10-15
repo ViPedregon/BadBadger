@@ -121,6 +121,7 @@
       "description": "Trigger the irreversible relay lockdown from Operations.",
       "preconditions": [{"subject_id": "crisis", "predicate": "resolved", "equals": false}],
       "effects": {
+        "cancel_events": ["crisis_warning"],
         "facts": [
           {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
           {"subject_id": "crisis", "predicate": "outcome", "value": "relay_sealed", "hidden": true}
@@ -152,6 +153,7 @@
       "description": "Use the transmitter's remaining power to call the listening rescue ship.",
       "preconditions": [{"subject_id": "crisis", "predicate": "resolved", "equals": false}],
       "effects": {
+        "cancel_events": ["crisis_warning"],
         "player_trust_required": 0.4,
         "decision": {
           "base_score": -0.4,
@@ -201,6 +203,7 @@
       "description": "Vent the sample into the sterilization chamber, destroying it and the research it contains.",
       "preconditions": [{"subject_id": "crisis", "predicate": "resolved", "equals": false}],
       "effects": {
+        "cancel_events": ["crisis_warning"],
         "facts": [
           {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
           {"subject_id": "crisis", "predicate": "outcome", "value": "sample_purged", "hidden": true}
@@ -224,6 +227,26 @@
           {"type": "set_simulation_status", "delay_minutes": 10, "payload": {"status": "ended", "player_visible": true, "visible_message": "The immediate aftermath settles. This chapter of the relay crisis is over."}}
         ],
         "visible_message": "Dr. Lin purges the sample. The contamination risk vanishes with years of research, while the relay remains available for a later rescue attempt."
+      }
+    }
+  ],
+  "events": [
+    {
+      "type": "narration",
+      "due_time": 6,
+      "cancellation_key": "crisis_warning",
+      "payload": {
+        "player_visible": true,
+        "message": "A warning tone rolls through the station. Reserve power is falling, and no one has committed to a response."
+      }
+    },
+    {
+      "type": "narration",
+      "due_time": 10,
+      "cancellation_key": "crisis_warning",
+      "payload": {
+        "player_visible": true,
+        "message": "The relay core climbs to a strained whine. The crew's window to choose is almost closed."
       }
     }
   ]

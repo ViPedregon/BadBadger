@@ -127,6 +127,9 @@ offline path is `go to Relay Chamber`, followed by
 ask what each character knows before deciding whom to inform or encourage.
 The opening decision schedule leaves enough time to question multiple NPCs;
 ordinary information requests cannot authorize an irreversible interaction.
+Authored warning beats at minutes 6 and 10 make the shrinking decision window
+legible without revealing hidden facts. Resolving the crisis cancels any
+remaining warning beats so they cannot appear during the aftermath.
 After a decisive action, the simulation remains active for a ten-minute
 aftermath. Ask affected characters `what now?` or `how do you feel?` to hear
 reactions grounded in their resolved goals, or inspect them directly. A

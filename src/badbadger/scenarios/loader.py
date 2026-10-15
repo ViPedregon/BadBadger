@@ -527,10 +527,47 @@ def _validate(data: dict[str, Any]) -> None:
                 raise ScenarioError(
                     f"Scheduled message for action {action['id']} is invalid"
                 )
+        cancel_events = effects.get("cancel_events", [])
+        if not isinstance(cancel_events, list) or not all(
+            isinstance(key, str) and key.strip() for key in cancel_events
+        ):
+            raise ScenarioError(
+                f"Cancelled event keys for action {action['id']} must be text"
+            )
         if effects.get("simulation_status") not in {
             None, "active", "succeeded", "failed", "ended"
         }:
             raise ScenarioError(f"Invalid mission status for action {action['id']}")
+
+    events = data.get("events", [])
+    if not isinstance(events, list):
+        raise ScenarioError("Scenario events must be a list")
+    for event in events:
+        if not isinstance(event, dict):
+            raise ScenarioError("Each scheduled event must be an object")
+        if event.get("type") not in {
+            "set_fact", "set_simulation_status", "narration"
+        }:
+            raise ScenarioError("Scheduled event has an unsupported type")
+        due_time = event.get("due_time")
+        if not isinstance(due_time, int) or isinstance(due_time, bool) or due_time < 0:
+            raise ScenarioError("Scheduled event due_time must be non-negative")
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            raise ScenarioError("Scheduled event payload must be an object")
+        if event["type"] == "narration" and (
+            not isinstance(payload.get("message"), str)
+            or not payload["message"].strip()
+            or payload.get("player_visible") is not True
+        ):
+            raise ScenarioError(
+                "Narration events require a visible, non-empty message"
+            )
+        cancellation_key = event.get("cancellation_key")
+        if cancellation_key is not None and (
+            not isinstance(cancellation_key, str) or not cancellation_key.strip()
+        ):
+            raise ScenarioError("Scheduled event cancellation_key must be text")
 
 
 def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:

@@ -455,6 +455,39 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertFalse(app.repository.get_fact("crisis", "resolved"))
             app.repository.close()
 
+    def test_relay_crisis_warns_player_before_autonomous_choice(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+
+            messages, _ = app.handle("wait 6")
+            self.assertTrue(any("Reserve power is falling" in item for item in messages))
+            messages, _ = app.handle("wait 4")
+            self.assertTrue(any("window to choose" in item for item in messages))
+            self.assertFalse(app.repository.get_fact("crisis", "resolved"))
+            app.repository.close()
+
+    def test_resolving_crisis_cancels_obsolete_warning_beats(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+            with app.repository.transaction():
+                accepted, _ = app.repository.apply_npc_action(
+                    "sable", "sable_seal_relay", requested_by_player=True
+                )
+            self.assertTrue(accepted)
+            warning_statuses = app.repository.connection.execute(
+                "SELECT DISTINCT status FROM scheduled_events "
+                "WHERE cancellation_key='crisis_warning'"
+            ).fetchall()
+            self.assertEqual([row["status"] for row in warning_statuses], ["cancelled"])
+            messages, _ = app.handle("wait 10")
+            self.assertFalse(any("Reserve power" in item for item in messages))
+            self.assertFalse(any("window to choose" in item for item in messages))
+            app.repository.close()
+
     def test_shared_belief_changes_explainable_autonomous_decision(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             resource = files("badbadger.scenarios").joinpath("relay_crisis.json")

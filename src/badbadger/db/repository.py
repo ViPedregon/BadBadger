@@ -648,6 +648,8 @@ class GameRepository:
                 relationship_effect["reason"],
                 action_id,
             )
+        for cancellation_key in effects.get("cancel_events", []):
+            self.cancel_events(cancellation_key)
         for scheduled in effects.get("scheduled_events", []):
             self.schedule_event(
                 scheduled["type"],
@@ -1554,6 +1556,14 @@ class GameRepository:
             (event_type, due_time, json.dumps(payload), cancellation_key),
         )
         return int(cursor.lastrowid)
+
+    def cancel_events(self, cancellation_key: str) -> int:
+        cursor = self.connection.execute(
+            "UPDATE scheduled_events SET status='cancelled' "
+            "WHERE cancellation_key=? AND status='pending'",
+            (cancellation_key,),
+        )
+        return int(cursor.rowcount)
 
     def due_events(self) -> list[dict[str, Any]]:
         rows = self.connection.execute(

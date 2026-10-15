@@ -42,10 +42,16 @@ def _set_simulation_status(
     return payload.get("visible_message", "The mission concludes.")
 
 
+def _narration(repository: GameRepository, payload: dict[str, Any]) -> str:
+    """Emit authored atmosphere without changing authoritative world state."""
+    return str(payload["message"])
+
+
 EVENT_HANDLERS: dict[str, EventHandler] = {
     "set_fact": _set_fact,
     "character_arrival": _arrival,
     "set_simulation_status": _set_simulation_status,
+    "narration": _narration,
 }
 
 
