@@ -84,6 +84,19 @@ class GameRepository:
             (scenario_id,),
         )
 
+    def set_scenario_presentation(self, details: dict[str, Any]) -> None:
+        self.connection.execute(
+            "INSERT INTO scenario_presentation(id,details_json) VALUES (1,?) "
+            "ON CONFLICT(id) DO UPDATE SET details_json=excluded.details_json",
+            (json.dumps(details, sort_keys=True),),
+        )
+
+    def scenario_presentation(self) -> dict[str, Any]:
+        row = self.connection.execute(
+            "SELECT details_json FROM scenario_presentation WHERE id=1"
+        ).fetchone()
+        return json.loads(row["details_json"]) if row else {}
+
     @property
     def current_time(self) -> int:
         row = self.connection.execute(

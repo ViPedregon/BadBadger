@@ -1,5 +1,42 @@
 # BadBadger
-Initial attempt at a dialogue based game
+
+A dialogue-driven game prototype where NPCs act from their own knowledge,
+beliefs, relationships, personalities, and goals while a deterministic engine
+owns world state and validates every consequence.
+
+## Play Relay Crisis
+
+On Windows, double-click `play.cmd`. The first launch creates an isolated local
+environment and installs the game; later launches start immediately and resume
+the same save. Python 3.11 or newer is required when playing from source.
+
+Useful launcher options from PowerShell:
+
+```powershell
+.\play.ps1 -NewGame       # replace the Relay Crisis save
+.\play.ps1 -Offline       # never make API calls
+.\play.ps1 -Developer     # expose private NPC inspection tools
+```
+
+During play, `journal` shows only information the player has actually learned,
+including its remembered source, while `people` lists the cast without exposing
+offscreen locations. Short unambiguous references work in familiar commands,
+so inputs such as `ask Orr what he knows` and `examine table` do not require
+formal ids or full titles.
+
+Without an `OPENAI_API_KEY`, the game automatically uses its deterministic
+offline dialogue. With a key, it uses LLM dialogue and natural-language intent
+interpretation with deterministic fallback. A transient `[Working...]` status
+appears while simulation or AI-backed commands are being processed.
+
+To create a standalone Windows executable for players who do not have Python:
+
+```powershell
+.\build-windows.ps1
+```
+
+The distributable is written to `dist\BadBadger.exe`. See [PLAYTEST.md](PLAYTEST.md)
+for the external playtest procedure and feedback questions.
 
 ## Version 0.1 deterministic slice
 
@@ -40,16 +77,16 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -p "test_vertical_slice.py" -v
 ```
 
-Run the playable SQLite-backed CLI with:
+Run the playable SQLite-backed CLI directly with:
 
 ```powershell
 $env:PYTHONPATH = "src"
 python -m badbadger.cli --save my-game.db
 ```
 
-Type `npc` to list NPCs or `npc Observer` to inspect an NPC's location,
-activity, parameters, goals, and beliefs. The inspector deliberately excludes
-hidden objective facts.
+Use `--developer` to enable `npc` and `npc <name>` inspection commands. The
+inspector deliberately excludes hidden objective facts and is omitted from
+normal player help.
 
 To start a new save from a custom scenario, copy
 `src/badbadger/scenarios/prototype.json`, edit it, and run:

@@ -1542,6 +1542,87 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertEqual(app.repository.current_time, 0)
             app.repository.close()
 
+    def test_player_mode_introduces_guides_and_hides_debug_inspection(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(
+                    Path(temp_dir) / "save.db", scenario=scenario,
+                    developer_mode=False,
+                )
+
+            introduction = "\n".join(app.introduction())
+            self.assertIn("Relay Crisis", introduction)
+            self.assertIn("Objective:", introduction)
+            self.assertIn("Director Sable", introduction)
+            self.assertIn("Relay Chamber", introduction)
+
+            choices, _ = app.handle("choices")
+            self.assertIn("ask Director Sable", choices[0])
+            self.assertIn("go to Relay Chamber", choices[0])
+            inspection, _ = app.handle("npc Director Sable")
+            self.assertIn("developer mode", inspection[0])
+            self.assertNotIn("is_unstable", inspection[0])
+            app.repository.close()
+
+    def test_player_journal_and_cast_expose_only_player_safe_information(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(
+                    Path(temp_dir) / "save.db", scenario=scenario,
+                    developer_mode=False,
+                )
+            with app.repository.transaction():
+                app.repository.set_belief(
+                    "player", "rescue", "is_listening", True, 0.9,
+                    source_type="hearsay", source_character_id="orr",
+                    detail="Orr disclosed the receiver status.",
+                )
+
+            journal, _ = app.handle("journal")
+            self.assertIn("rescue is listening: yes", journal[0])
+            self.assertIn("from Technician Orr", journal[0])
+            self.assertNotIn("crisis.outcome", journal[0])
+            people, _ = app.handle("people")
+            self.assertIn("Director Sable (here)", people[0])
+            self.assertIn("Technician Orr (elsewhere)", people[0])
+            self.assertNotIn("Relay Chamber", people[0])
+            app.repository.close()
+
+    def test_short_unambiguous_player_references_work_offline(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+
+            examined, _ = app.handle("examine table")
+            self.assertIn("three live controls", examined[0])
+            app.handle("go relay")
+            spoken, _ = app.handle("ask Orr what he knows")
+            self.assertIn("Technician Orr", spoken[0])
+            app.repository.close()
+
+    def test_completed_chapter_has_player_facing_summary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+            with as_file(resource) as scenario:
+                app = open_prototype(Path(temp_dir) / "save.db", scenario=scenario)
+            with app.repository.transaction():
+                accepted, _ = app.repository.apply_npc_action(
+                    "sable", "sable_seal_relay", requested_by_player=True
+                )
+                self.assertTrue(accepted)
+                app.repository.advance_time(10)
+                from badbadger.engine.events import process_due_events
+                process_due_events(app.repository)
+
+            summary, _ = app.handle("summary")
+            self.assertIn("Chapter complete", summary[0])
+            self.assertIn("Director Sable", summary[0])
+            self.assertIn("Technician Orr", summary[0])
+            app.repository.close()
+
     def test_llm_intent_handles_natural_movement_and_engine_validates_it(self):
         class NaturalLanguageInterpreter:
             def interpret(self, context, player_input):

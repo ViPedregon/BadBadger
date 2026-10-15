@@ -8,6 +8,11 @@ CREATE TABLE IF NOT EXISTS simulation (
         CHECK (status IN ('active', 'succeeded', 'failed', 'ended'))
 );
 
+CREATE TABLE IF NOT EXISTS scenario_presentation (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    details_json TEXT NOT NULL DEFAULT '{}'
+);
+
 CREATE TABLE IF NOT EXISTS locations (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

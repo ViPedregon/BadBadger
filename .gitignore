@@ -8,7 +8,10 @@ __pycache__/
 build/
 dist/
 .venv/
+.build-venv/
+.build-tmp/
 venv/
+*.spec
 
 # Local game saves and secrets
 *.db

@@ -1,5 +1,10 @@
 {
   "scenario_id": "relay-crisis-0.1",
+  "presentation": {
+    "title": "Relay Crisis",
+    "intro": "A damaged research station has one viable burst of power left. Director Sable wants containment, Technician Orr sees a narrow chance for rescue, and Dr. Lin fears what the unstable sample may become. They do not share the same information - and the station will not wait forever.",
+    "objective": "Question the crew, decide which risks you believe, and influence what happens before someone acts alone."
+  },
   "locations": [
     {
       "id": "operations",

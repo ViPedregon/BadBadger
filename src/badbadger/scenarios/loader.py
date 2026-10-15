@@ -22,6 +22,13 @@ def _required(data: dict[str, Any], key: str, expected: type) -> Any:
 
 
 def _validate(data: dict[str, Any]) -> None:
+    presentation = data.get("presentation", {})
+    if not isinstance(presentation, dict):
+        raise ScenarioError("Scenario presentation must be an object")
+    for key in ("title", "intro", "objective"):
+        value = presentation.get(key)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ScenarioError(f"Presentation {key} must be non-empty text")
     locations = _required(data, "locations", list)
     characters = _required(data, "characters", list)
     location_ids: set[str] = set()
@@ -545,6 +552,7 @@ def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
     try:
         with repository.transaction():
             repository.initialize_simulation(scenario_id)
+            repository.set_scenario_presentation(data.get("presentation", {}))
             for item in locations:
                 repository.add_location(item["id"], item["name"], item["description"])
                 if item.get("appearance"):

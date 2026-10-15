@@ -42,21 +42,23 @@ class DeterministicIntentInterpreter:
         movement = re.fullmatch(r"(?:go|move|travel)(?:\s+to)?\s+(.+)", text, re.I)
         if movement:
             reference = self._normalize(movement.group(1))
-            for location in context.known_locations:
-                if reference in {
-                    self._normalize(location["id"]),
-                    self._normalize(location["name"]),
-                }:
-                    return PlayerIntent("move", target_id=location["id"])
+            matches = self._exact_reference_matches(
+                reference, context.known_locations
+            )
+            if len(matches) == 1:
+                return PlayerIntent("move", target_id=matches[0]["id"])
 
         examination = re.fullmatch(
             r"(?:examine|inspect|look at)\s+(?:the\s+)?(.+)", text, re.I
         )
         if examination:
             reference = self._normalize(examination.group(1))
-            for subject_id in context.examinable_subject_ids:
-                if reference == self._normalize(subject_id):
-                    return PlayerIntent("examine", target_id=subject_id)
+            matches = [
+                subject_id for subject_id in context.examinable_subject_ids
+                if reference in self._aliases(subject_id, subject_id)
+            ]
+            if len(matches) == 1:
+                return PlayerIntent("examine", target_id=matches[0])
 
         waiting = re.fullmatch(
             r"wait(?:\s+for)?\s+(\d+)(?:\s+minutes?)?", text, re.I
@@ -76,18 +78,41 @@ class DeterministicIntentInterpreter:
             reference = text[len(dialogue_prefix) :].strip()
             if reference.lower().startswith("the "):
                 reference = reference[4:]
+            normalized_reference = self._normalize(reference)
+            matches = []
             for npc in context.visible_npcs:
-                name = npc["name"]
-                if reference.lower() == name.lower() or reference.lower().startswith(
-                    f"{name.lower()} "
+                aliases = self._aliases(npc["id"], npc["name"])
+                if any(
+                    normalized_reference == alias
+                    or normalized_reference.startswith(alias + " ")
+                    for alias in aliases
                 ):
-                    return PlayerIntent("speak", target_id=npc["id"])
+                    matches.append(npc)
+            unique = {item["id"]: item for item in matches}
+            if len(unique) == 1:
+                return PlayerIntent("speak", target_id=next(iter(unique)))
 
         return PlayerIntent("unknown")
 
     @staticmethod
     def _normalize(value: str) -> str:
         return " ".join(value.lower().replace("_", " ").split())
+
+    @classmethod
+    def _aliases(cls, item_id: str, name: str) -> set[str]:
+        normalized_id = cls._normalize(item_id)
+        normalized_name = cls._normalize(name)
+        tokens = {token for token in normalized_name.split() if len(token) >= 3}
+        return {normalized_id, normalized_name, *tokens}
+
+    @classmethod
+    def _exact_reference_matches(
+        cls, reference: str, items: list[dict[str, str]]
+    ) -> list[dict[str, str]]:
+        return [
+            item for item in items
+            if reference in cls._aliases(item["id"], item["name"])
+        ]
 
 
 class SafeIntentInterpreter:
