@@ -1,0 +1,475 @@
+"""Application service for the first SQLite-backed playable slice."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from importlib.resources import as_file, files
+
+from badbadger.agents.intent import (
+    DeterministicIntentInterpreter,
+    IntentInterpreter,
+    PlayerIntent,
+    PlayerIntentContext,
+)
+from badbadger.agents.npc import DeterministicNPCBackend, NPCBackend
+from badbadger.db.repository import GameRepository
+from badbadger.engine.actions import ExamineAction, MoveAction, WaitAction
+from badbadger.engine.autonomy import AutonomyScheduler
+from badbadger.engine.dialogue import DialogueService
+from badbadger.engine.simulation import SimulationEngine
+from badbadger.scenarios.loader import load_scenario
+
+
+HELP_TEXT = """You can type naturally. Useful examples:
+  look                         describe your surroundings
+  go to Relay Chamber          travel to a connected location
+  ask Technician Orr what he knows
+  tell Dr. Lin about the rescue signal
+  examine situation table      inspect something important
+  wait 2 minutes               let events unfold
+  objective                    review your immediate purpose
+  journal                      review facts and events you have learned
+  people                       review the cast without revealing locations
+  choices                      see a few contextual suggestions
+  summary                      review the chapter after it ends
+  quit                         save and leave the game"""
+
+
+class GameApplication:
+    """Translate a small text vocabulary and delegate mutations to the engine."""
+
+    def __init__(
+        self,
+        engine: SimulationEngine,
+        npc_backend: NPCBackend | None = None,
+        backend_label: str = "deterministic",
+        intent_interpreter: IntentInterpreter | None = None,
+        intent_label: str = "deterministic",
+        developer_mode: bool = False,
+    ) -> None:
+        self.engine = engine
+        self.backend_label = backend_label
+        self.intent_label = intent_label
+        self.local_interpreter = DeterministicIntentInterpreter()
+        self.intent_interpreter = intent_interpreter
+        self.developer_mode = developer_mode
+        self.dialogue = DialogueService(
+            engine.repository, npc_backend or DeterministicNPCBackend()
+        )
+        self.autonomy = AutonomyScheduler(
+            engine.repository, npc_backend or DeterministicNPCBackend()
+        )
+
+    @property
+    def repository(self) -> GameRepository:
+        return self.engine.repository
+
+    def status(self) -> list[str]:
+        player = self.repository.get_player()
+        location = self.repository.get_location(player["location_id"])
+        if location is None:
+            raise RuntimeError("Player is assigned to an unknown location")
+        visible = self.repository.characters_at(location["id"], kind="npc")
+        exits = self.repository.reachable_locations(location["id"])
+        return [
+            f"[{location['name']}]",
+            location["description"],
+            "Here: " + (", ".join(item["name"] for item in visible) or "no one else"),
+            "Exits: " + (", ".join(item["name"] for item in exits) or "none"),
+            f"Mission time: {self.repository.current_time} minutes.",
+            f"Mission status: {self.repository.simulation_status}.",
+        ]
+
+    def introduction(self) -> list[str]:
+        presentation = self.repository.scenario_presentation()
+        title = presentation.get("title", self.repository.scenario_id)
+        intro = presentation.get("intro", "Your next decision is waiting.")
+        objective = presentation.get(
+            "objective", "Explore, speak with the people present, and decide what to do."
+        )
+        return [f"=== {title} ===", intro, f"Objective: {objective}", *self.status()]
+
+    def choices(self) -> list[str]:
+        context = self._intent_context()
+        suggestions = ["look"]
+        suggestions.extend(
+            f"ask {npc['name']} what they know" for npc in context.visible_npcs[:2]
+        )
+        suggestions.extend(
+            f"go to {location['name']}"
+            for location in self.repository.reachable_locations(
+                context.current_location["id"]
+            )[:2]
+        )
+        if context.examinable_subject_ids:
+            suggestions.append(
+                "examine " + context.examinable_subject_ids[0].replace("_", " ")
+            )
+        if self.repository.beliefs_for(self.repository.get_player()["id"]):
+            suggestions.append("journal")
+        return ["You could try:\n  " + "\n  ".join(suggestions[:5])]
+
+    def journal(self) -> list[str]:
+        """Render only knowledge and memories owned by the player."""
+        player = self.repository.get_player()
+        presentation = self.repository.scenario_presentation()
+        lines = [
+            "=== Journal ===",
+            "Objective: " + presentation.get(
+                "objective", "Explore, speak with the people present, and decide what to do."
+            ),
+            "",
+            "What you know:",
+        ]
+        beliefs = self.repository.beliefs_for(player["id"])
+        for belief in beliefs:
+            subject = belief["subject_id"].replace("_", " ")
+            predicate = belief["predicate"].replace("_", " ")
+            value = belief["value"]
+            rendered = "yes" if value is True else "no" if value is False else str(value)
+            confidence = float(belief["confidence"])
+            certainty = "confident" if confidence >= 0.85 else "likely" if confidence >= 0.6 else "uncertain"
+            evidence = belief.get("evidence", [])
+            source_id = evidence[-1].get("source_character_id") if evidence else None
+            source = self.repository.get_character(source_id) if source_id else None
+            attribution = f"; from {source['name']}" if source else ""
+            lines.append(
+                f"  {subject} {predicate}: {rendered} ({certainty}{attribution})"
+            )
+        if not beliefs:
+            lines.append("  You have not confirmed any private information yet.")
+
+        lines.extend(["", "What you remember:"])
+        memories = self.repository.memories_for(player["id"], limit=5)
+        lines.extend(f"  {item['summary']}" for item in memories)
+        if not memories:
+            lines.append("  Nothing significant has been recorded yet.")
+        return ["\n".join(lines)]
+
+    def people(self) -> list[str]:
+        player = self.repository.get_player()
+        lines = ["=== People ==="]
+        for npc in self.repository.list_npcs():
+            presence = "here" if npc["location_id"] == player["location_id"] else "elsewhere"
+            appearance = self.repository.appearance_for(npc["id"], "character")
+            role = appearance.get("role") or appearance.get("clothing")
+            detail = f" - {role}" if role else ""
+            lines.append(f"{npc['name']} ({presence}){detail}")
+        return ["\n".join(lines)]
+
+    def chapter_summary(self) -> list[str]:
+        if self.repository.simulation_status == "active":
+            return ["The chapter is still unfolding. Keep investigating or make a choice."]
+        lines = [
+            "=== Chapter complete ===",
+            f"Final time: {self.repository.current_time} minutes.",
+        ]
+        for npc in self.repository.list_npcs():
+            goals = self.repository.goals_for(npc["id"], include_resolved=True)
+            for goal in goals:
+                if goal["status"] != "active":
+                    reason = goal["history"][-1]["reason"] if goal["history"] else goal["description"]
+                    lines.append(f"{npc['name']} — {goal['status']}: {reason}")
+        lines.append("Your choices and the NPCs' decisions are saved in this playthrough.")
+        return ["\n".join(lines)]
+
+    def handle(self, raw_input: str) -> tuple[list[str], bool]:
+        """Handle one text input and return ``(messages, should_quit)``."""
+        player_text = raw_input.strip()
+        text = " ".join(player_text.split())
+        lowered = text.lower()
+        if not text:
+            return [], False
+        if lowered in {"quit", "exit", "q"}:
+            return ["Game saved. Goodbye."], True
+        if lowered in {"help", "?"}:
+            suffix = (
+                "\n  npc <name>                   inspect private NPC engine state"
+                if self.developer_mode else ""
+            )
+            return [HELP_TEXT + suffix], False
+        if lowered in {"look", "look around", "status", "where am i"}:
+            return self.status(), False
+        if lowered in {"objective", "mission", "goal"}:
+            presentation = self.repository.scenario_presentation()
+            return ["Objective: " + presentation.get(
+                "objective", "Explore, speak with the people present, and decide what to do."
+            )], False
+        if lowered in {"journal", "notes", "knowledge", "what do i know"}:
+            return self.journal(), False
+        if lowered in {"people", "characters", "cast", "who is here"}:
+            return self.people(), False
+        if lowered in {"choices", "suggestions", "what can i do"}:
+            return self.choices(), False
+        if lowered in {"summary", "recap"}:
+            return self.chapter_summary(), False
+        if lowered == "npc":
+            if not self.developer_mode:
+                return ["NPC inspection is available only in developer mode."], False
+            names = [row["name"] for row in self.repository.list_npcs()]
+            return ["NPCs: " + (", ".join(names) if names else "none")], False
+        if lowered.startswith("npc "):
+            if not self.developer_mode:
+                return ["NPC inspection is available only in developer mode."], False
+            return self.inspect_npc(text[4:].strip()), False
+        if lowered.startswith("inspect npc "):
+            if not self.developer_mode:
+                return ["NPC inspection is available only in developer mode."], False
+            return self.inspect_npc(text[12:].strip()), False
+        if self.repository.simulation_status != "active":
+            return [
+                "This mission has ended. Type 'summary' to review the chapter or start a new game."
+            ], False
+
+        context = self._intent_context()
+        intent = self.local_interpreter.interpret(context, text)
+        source = "deterministic"
+        if intent.kind == "unknown" and self.intent_interpreter is not None:
+            intent = self.intent_interpreter.interpret(context, player_text)
+            source = "llm"
+        intent_backend_failed = False
+        consume_failure = getattr(self.intent_interpreter, "consume_failure", None)
+        if callable(consume_failure):
+            intent_backend_failed = bool(consume_failure())
+        with self.repository.transaction():
+            self.repository.record(
+                "intent_interpreted",
+                actor_id=self.repository.get_player()["id"],
+                input_data={"player_input": player_text, "source": source},
+                result_data={
+                    "kind": intent.kind,
+                    "target_id": intent.target_id,
+                    "minutes": intent.minutes,
+                },
+            )
+        if intent_backend_failed and intent.kind == "unknown":
+            messages = [
+                "AI language interpretation is temporarily unavailable. "
+                "Try a command shown by 'choices', or continue in offline mode."
+            ]
+        else:
+            messages = self._execute_intent(intent, player_text)
+        messages.extend(self.autonomy.process_due(call_budget=1))
+        return messages, False
+
+    def _intent_context(self) -> PlayerIntentContext:
+        player = self.repository.get_player()
+        current = self.repository.get_location(player["location_id"])
+        if current is None:
+            raise RuntimeError("Player is assigned to an unknown location")
+        return PlayerIntentContext(
+            current_location={"id": current["id"], "name": current["name"]},
+            known_locations=[
+                {"id": item["id"], "name": item["name"]}
+                for item in self.repository.list_locations()
+            ],
+            visible_npcs=[
+                {"id": item["id"], "name": item["name"]}
+                for item in self.repository.characters_at(
+                    current["id"], kind="npc"
+                )
+            ],
+            examinable_subject_ids=self.repository.examinable_subject_ids(),
+        )
+
+    def _execute_intent(self, intent: PlayerIntent, player_input: str) -> list[str]:
+        if intent.kind == "move" and intent.target_id:
+            if self.repository.get_location(intent.target_id) is None:
+                return ["That destination is not available."]
+            return self.engine.perform(MoveAction(intent.target_id)).messages
+        if intent.kind == "examine" and intent.target_id:
+            if intent.target_id not in self.repository.examinable_subject_ids():
+                return ["You find nothing meaningful to examine."]
+            return self.engine.perform(ExamineAction(intent.target_id)).messages
+        if intent.kind == "wait" and intent.minutes is not None:
+            if not 1 <= intent.minutes <= 1_440:
+                return ["You can only wait between 1 and 1,440 minutes."]
+            return self.engine.perform(WaitAction(intent.minutes)).messages
+        if intent.kind == "speak" and intent.target_id:
+            npc = self.repository.get_character(intent.target_id)
+            player = self.repository.get_player()
+            if (
+                npc is None
+                or npc["kind"] != "npc"
+                or npc["location_id"] != player["location_id"]
+            ):
+                return ["That person is not here."]
+            return self.dialogue.converse(npc["id"], player_input)
+        return ["I couldn't interpret that yet. Try rephrasing or type 'help'."]
+
+    def inspect_npc(self, reference: str) -> list[str]:
+        """Render NPC-scoped runtime state without leaking hidden world facts."""
+        npc = self.repository.find_npc(reference)
+        if npc is None:
+            return [f"Unknown NPC: {reference}"]
+        location = self.repository.get_location(npc["location_id"])
+        activity = self.repository.pending_activity(npc["id"])
+        parameters = self.repository.npc_parameters(npc["id"])
+        lines = [
+            f"NPC: {npc['name']} ({npc['id']})",
+            f"Location: {location['name'] if location else npc['location_id']}",
+            f"Activity: {activity['kind'] if activity else 'idle'}",
+            f"Appearance: {self.repository.appearance_for(npc['id'], 'character')!r}",
+        ]
+        canon = self.repository.character_canon(npc["id"])
+        lines.append("Character canon:")
+        if canon is None:
+            lines.append("  (none)")
+        else:
+            lines.extend([
+                f"  Role: {canon['role'] or '(unspecified)'}",
+                f"  Voice: {canon['voice'] or '(unspecified)'}",
+                "  Values: " + (", ".join(canon["values"]) or "(none)"),
+                "  Boundaries: " + (", ".join(canon["boundaries"]) or "(none)"),
+                "  Biography fragments:",
+            ])
+            for fragment in canon["biography"]:
+                lines.append(
+                    f"    {fragment['id']} [{fragment['visibility']}, "
+                    f"{fragment['awareness']}, importance={fragment['importance']:.2f}, "
+                    f"certainty={fragment['certainty']:.2f}]: {fragment['summary']}"
+                )
+            if not canon["biography"]:
+                lines.append("    (none)")
+        lines.append("Parameters:")
+        lines.extend(
+            f"  {key}: {value!r}" for key, value in sorted(parameters.items())
+        )
+        if not parameters:
+            lines.append("  (none)")
+        lines.append("Goals:")
+        goals = self.repository.goals_for(npc["id"], include_resolved=True)
+        lines.extend(
+            f"  [{goal['priority']}] {goal['goal_id']} ({goal['status']}): "
+            f"{goal['description']}"
+            + (
+                f"\n    Latest: {goal['history'][-1]['reason']}"
+                if goal["history"] and goal["status"] != "active" else ""
+            )
+            for goal in goals
+        )
+        if not goals:
+            lines.append("  (none)")
+        lines.append("Autonomous action considerations:")
+        decisions = self.repository.available_npc_actions(npc["id"])
+        lines.extend(
+            f"  {action['label']}: score={action['decision_score']:.2f}, "
+            f"minimum={action['minimum_score']:.2f}, "
+            f"eligible={action['autonomous_eligible']}\n    "
+            + " ".join(action["decision_reasons"])
+            for action in decisions
+        )
+        if not decisions:
+            lines.append("  (none at current location)")
+        lines.append("Beliefs:")
+        beliefs = self.repository.beliefs_for(npc["id"])
+        lines.extend(
+            f"  {belief['subject_id']}.{belief['predicate']} = "
+            f"{belief['value']!r} (confidence {belief['confidence']:.3f})"
+            for belief in beliefs
+        )
+        if not beliefs:
+            lines.append("  (none)")
+        lines.append("Memories:")
+        memories = self.repository.memories_for(npc["id"])
+        lines.extend(
+            f"  [t={memory['game_time']}, salience={memory['salience']:.2f}] "
+            f"{memory['summary']}"
+            for memory in memories
+        )
+        if not memories:
+            lines.append("  (none)")
+        lines.append("Relationships:")
+        relationships = self.repository.relationships_for(npc["id"])
+        lines.extend(
+            f"  {relationship['target_name']}: trust={relationship['trust']:.2f}, "
+            f"affinity={relationship['affinity']:.2f}"
+            + (
+                f"\n    Latest ({relationship['recent_changes'][-1]['source_type']}"
+                + (
+                    f" via {relationship['recent_changes'][-1]['source_action_id']}"
+                    if relationship["recent_changes"][-1].get("source_action_id")
+                    else ""
+                )
+                + f"): {relationship['recent_changes'][-1]['reason']}"
+                if relationship["recent_changes"] else ""
+            )
+            for relationship in relationships
+        )
+        if not relationships:
+            lines.append("  (none)")
+        lines.append("Disclosure topics:")
+        disclosures = self.repository.disclosure_affordances(
+            npc["id"], self.repository.get_player()["id"]
+        )
+        lines.extend(
+            f"  {item['topic']}: "
+            f"{'shared' if item['already_shared'] else 'available' if item['eligible'] else 'withheld'}"
+            for item in disclosures
+        )
+        if not disclosures:
+            lines.append("  (none)")
+        return ["\n".join(lines)]
+
+
+def create_prototype(database: str | Path) -> SimulationEngine:
+    """Create a deliberately generic two-room test simulation."""
+    resource = files("badbadger.scenarios").joinpath("prototype.json")
+    with as_file(resource) as path:
+        return load_scenario(path, database)
+
+
+def open_prototype(
+    database: str | Path,
+    *,
+    npc_backend: NPCBackend | None = None,
+    backend_label: str = "deterministic",
+    intent_interpreter: IntentInterpreter | None = None,
+    intent_label: str = "deterministic",
+    scenario: str | Path | None = None,
+    developer_mode: bool = True,
+) -> GameApplication:
+    """Resume an existing prototype save, or create it on first launch."""
+    path = Path(database)
+    if path.exists() and path.stat().st_size > 0:
+        repository = GameRepository(path)
+        try:
+            repository.create_schema()
+            repository.current_time
+            if repository.scenario_id == "prototype-0.1":
+                with repository.transaction():
+                    repository.add_connection("room_a", "room_b", 5)
+                    repository.add_connection("room_b", "room_a", 5)
+                    repository.add_goal(
+                        "npc", "inspect_room_b",
+                        "Inspect Room B when an opportunity arises.", 1,
+                    )
+                    if not repository.npc_parameters("npc"):
+                        repository.set_npc_parameters("npc", {
+                            "autonomy_enabled": True,
+                            "decision_cooldown_minutes": 10,
+                            "first_decision_after_minutes": 3,
+                            "risk_tolerance": 0.35,
+                            "temperament": "cautious",
+                        })
+                    repository.ensure_decision_event("npc", repository.current_time + 3)
+        except Exception:
+            repository.close()
+            raise
+        return GameApplication(
+            SimulationEngine(repository),
+            npc_backend,
+            backend_label,
+            intent_interpreter,
+            intent_label,
+            developer_mode,
+        )
+    engine = load_scenario(scenario, path) if scenario else create_prototype(path)
+    return GameApplication(
+        engine,
+        npc_backend,
+        backend_label,
+        intent_interpreter,
+        intent_label,
+        developer_mode,
+    )

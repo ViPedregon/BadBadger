@@ -1,0 +1,21 @@
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Packaging and virtual environments
+*.egg-info/
+build/
+dist/
+.venv/
+.build-venv/
+.build-tmp/
+venv/
+*.spec
+
+# Local game saves and secrets
+*.db
+.env
+
+# Accidental nested clone retained locally for safety
+/BadBadger/

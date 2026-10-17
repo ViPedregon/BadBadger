@@ -1,0 +1,253 @@
+{
+  "scenario_id": "relay-crisis-0.1",
+  "presentation": {
+    "title": "Relay Crisis",
+    "intro": "A damaged research station has one viable burst of power left. Director Sable wants containment, Technician Orr sees a narrow chance for rescue, and Dr. Lin fears what the unstable sample may become. They do not share the same information - and the station will not wait forever.",
+    "objective": "Question the crew, decide which risks you believe, and influence what happens before someone acts alone."
+  },
+  "locations": [
+    {
+      "id": "operations",
+      "name": "Operations",
+      "description": "A compact coordination room overlooking the relay complex.",
+      "appearance": {
+        "architecture": "low-ceilinged industrial control room",
+        "palette": "slate gray, amber status lights, muted red accents",
+        "lighting": "warm console glow under dim emergency strips",
+        "landmarks": ["central situation table", "reinforced west window"]
+      }
+    },
+    {
+      "id": "relay",
+      "name": "Relay Chamber",
+      "description": "A humming communications chamber built around a tall transmitter core.",
+      "appearance": {
+        "architecture": "cylindrical concrete chamber with steel service gantries",
+        "palette": "cold blue, brushed steel, hazard yellow",
+        "lighting": "pulsing blue equipment light",
+        "landmarks": ["transmitter core", "purge manifold", "broadcast console"]
+      }
+    },
+    {
+      "id": "infirmary",
+      "name": "Infirmary",
+      "description": "A narrow medical bay with sealed cabinets and two empty cots.",
+      "appearance": {
+        "architecture": "sterile modular medical bay",
+        "palette": "off-white, pale green, stainless steel",
+        "lighting": "steady clinical ceiling panels",
+        "landmarks": ["two cots", "sealed medicine cabinets"]
+      }
+    }
+  ],
+  "connections": [
+    {"from": "operations", "to": "relay", "minutes": 2},
+    {"from": "relay", "to": "operations", "minutes": 2},
+    {"from": "operations", "to": "infirmary", "minutes": 2},
+    {"from": "infirmary", "to": "operations", "minutes": 2},
+    {"from": "infirmary", "to": "relay", "minutes": 2},
+    {"from": "relay", "to": "infirmary", "minutes": 2}
+  ],
+  "characters": [
+    {
+      "id": "player", "kind": "player", "name": "Player", "location_id": "operations",
+      "appearance": {"role": "field coordinator", "clothing": "charcoal utility jacket with a plain station badge"}
+    },
+    {
+      "id": "sable", "kind": "npc", "name": "Director Sable", "location_id": "operations",
+      "appearance": {"age": "late fifties", "build": "tall and spare", "hair": "close-cropped silver", "clothing": "dark station coat with a red command stripe"},
+      "parameters": {"temperament": "controlled and security-minded", "risk_tolerance": 0.2, "autonomy_enabled": true, "first_decision_after_minutes": 14, "decision_cooldown_minutes": 3},
+      "goals": [{"id": "contain_sample", "description": "Seal the relay before the unstable sample escapes containment.", "priority": 3}],
+      "relationships": [
+        {"target_id": "player", "trust": 0.1, "affinity": 0.0, "reason": "Sable has not yet judged the field coordinator under pressure."},
+        {"target_id": "orr", "trust": -0.35, "affinity": -0.1, "reason": "Sable considers Orr talented but dangerously impulsive."},
+        {"target_id": "lin", "trust": 0.45, "affinity": 0.2, "reason": "Sable respects Lin's careful technical judgment."}
+      ],
+      "beliefs": [
+        {"subject_id": "sample", "predicate": "is_unstable", "value": true, "confidence": 0.95},
+        {"subject_id": "rescue", "predicate": "is_listening", "value": false, "confidence": 0.7}
+      ]
+    },
+    {
+      "id": "orr", "kind": "npc", "name": "Technician Orr", "location_id": "relay",
+      "appearance": {"age": "early thirties", "build": "compact", "hair": "black curls under a headset", "clothing": "blue maintenance coveralls with rolled sleeves"},
+      "parameters": {"temperament": "urgent and optimistic", "risk_tolerance": 0.75, "autonomy_enabled": true, "first_decision_after_minutes": 12, "decision_cooldown_minutes": 3},
+      "goals": [{"id": "broadcast_rescue", "description": "Broadcast the distress packet while the receiver is listening.", "priority": 3}],
+      "relationships": [
+        {"target_id": "player", "trust": 0.25, "affinity": 0.15, "reason": "Orr hopes the field coordinator will support a rescue attempt."},
+        {"target_id": "sable", "trust": -0.2, "affinity": -0.15, "reason": "Orr believes Sable's caution may strand the crew."},
+        {"target_id": "lin", "trust": 0.3, "affinity": 0.1, "reason": "Orr trusts Lin's science even when they disagree about priorities."}
+      ],
+      "disclosures": [
+        {
+          "id": "orr_rescue_window",
+          "topic": "the rescue receiver's narrow handshake window",
+          "request_terms": ["rescue receiver", "distress signal", "handshake", "what do you know"],
+          "min_trust": 0.4,
+          "content": "The rescue receiver only opens its authenticated handshake for one minute. Our next and final window begins at mission minute twelve.",
+          "belief": {"subject_id": "rescue", "predicate": "final_window_minute", "value": 12, "confidence": 0.95}
+        }
+      ],
+      "beliefs": [
+        {"subject_id": "rescue", "predicate": "is_listening", "value": true, "confidence": 0.9},
+        {"subject_id": "sample", "predicate": "is_unstable", "value": false, "confidence": 0.55}
+      ]
+    },
+    {
+      "id": "lin", "kind": "npc", "name": "Dr. Lin", "location_id": "infirmary",
+      "appearance": {"age": "forties", "build": "slight", "hair": "long dark hair tied low", "clothing": "pale medical coat over an orange pressure vest"},
+      "parameters": {"temperament": "precise and protective", "risk_tolerance": 0.4, "autonomy_enabled": true, "first_decision_after_minutes": 8, "decision_cooldown_minutes": 3},
+      "goals": [{"id": "purge_sample", "description": "Reach the Relay Chamber and purge the sample before it destabilizes.", "priority": 3}],
+      "relationships": [
+        {"target_id": "player", "trust": 0.0, "affinity": 0.05, "reason": "Lin is waiting to see whether the field coordinator acts responsibly."},
+        {"target_id": "sable", "trust": 0.4, "affinity": 0.15, "reason": "Lin trusts Sable to take containment seriously."},
+        {"target_id": "orr", "trust": 0.15, "affinity": 0.2, "reason": "Lin likes Orr but doubts his appetite for risk."}
+      ],
+      "beliefs": [
+        {"subject_id": "sample", "predicate": "is_unstable", "value": true, "confidence": 0.85},
+        {"subject_id": "purge", "predicate": "will_destroy_research", "value": true, "confidence": 1.0}
+      ]
+    }
+  ],
+  "facts": [
+    {"subject_id": "crisis", "predicate": "resolved", "value": false, "hidden": true},
+    {"subject_id": "crisis", "predicate": "outcome", "value": "undecided", "hidden": true},
+    {"subject_id": "situation_table", "predicate": "description", "value": "The display shows three live controls: relay lockdown, distress broadcast, and sample purge. Activating any one will disable the other two."}
+  ],
+  "npc_actions": [
+    {
+      "id": "sable_seal_relay", "character_id": "sable", "location_id": "operations",
+      "label": "Seal the relay",
+      "description": "Trigger the irreversible relay lockdown from Operations.",
+      "preconditions": [{"subject_id": "crisis", "predicate": "resolved", "equals": false}],
+      "effects": {
+        "cancel_events": ["crisis_warning"],
+        "facts": [
+          {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
+          {"subject_id": "crisis", "predicate": "outcome", "value": "relay_sealed", "hidden": true}
+        ],
+        "observations": [
+          {"kind": "witnessed_action", "subject_id": "relay", "summary": "Director Sable sealed the relay behind armored shutters, silencing the transmitter.", "salience": 0.95}
+        ],
+        "relationships": [
+          {"observer_id": "sable", "target_id": "player", "trust_delta": 0.15, "affinity_delta": 0.05, "when_requested_by_player": true, "reason": "The player supported Sable's containment decision."},
+          {"observer_id": "orr", "target_id": "player", "trust_delta": -0.15, "affinity_delta": -0.05, "when_requested_by_player": true, "reason": "The player helped close Orr's last rescue window."},
+          {"observer_id": "lin", "target_id": "player", "trust_delta": 0.05, "affinity_delta": 0.0, "when_requested_by_player": true, "reason": "The player chose containment, though not Lin's preferred method."},
+          {"observer_id": "orr", "target_id": "sable", "trust_delta": -0.15, "affinity_delta": -0.1, "reason": "Sable's lockdown permanently prevented Orr's distress broadcast."},
+          {"observer_id": "lin", "target_id": "sable", "trust_delta": 0.1, "affinity_delta": 0.05, "reason": "Sable decisively contained the unstable sample."}
+        ],
+        "goals": [
+          {"character_id": "sable", "goal_id": "contain_sample", "status": "completed", "reason": "Sable sealed the unstable sample behind the relay shutters."},
+          {"character_id": "orr", "goal_id": "broadcast_rescue", "status": "failed", "reason": "The sealed transmitter can no longer broadcast the distress packet."},
+          {"character_id": "lin", "goal_id": "purge_sample", "status": "abandoned", "reason": "The sealed relay made purging unnecessary and inaccessible."}
+        ],
+        "scheduled_events": [
+          {"type": "set_simulation_status", "delay_minutes": 10, "payload": {"status": "ended", "player_visible": true, "visible_message": "The immediate aftermath settles. This chapter of the relay crisis is over."}}
+        ],
+        "visible_message": "Director Sable seals the relay. The transmitter falls silent behind armored shutters; the sample remains contained, but no distress call leaves the station."
+      }
+    },
+    {
+      "id": "orr_broadcast", "character_id": "orr", "location_id": "relay",
+      "label": "Broadcast the distress packet",
+      "description": "Use the transmitter's remaining power to call the listening rescue ship.",
+      "preconditions": [{"subject_id": "crisis", "predicate": "resolved", "equals": false}],
+      "effects": {
+        "cancel_events": ["crisis_warning"],
+        "player_trust_required": 0.4,
+        "decision": {
+          "base_score": -0.4,
+          "minimum_score": 1.0,
+          "goal_factors": [
+            {"goal_id": "broadcast_rescue", "score_per_priority": 0.1, "reason": "Orr prioritizes reaching rescue while the receiver is listening"}
+          ],
+          "parameter_factors": [
+            {"parameter": "risk_tolerance", "operator": "gte", "value": 0.7, "score": 0.6, "reason": "Orr's high risk tolerance favors acting during the narrow rescue window"}
+          ],
+          "relationship_factors": [
+            {"target_id": "sable", "metric": "trust", "operator": "lte", "value": -0.2, "score": 0.2, "reason": "Orr's distrust of Sable increases his urgency to act independently"}
+          ],
+          "belief_factors": [
+            {"subject_id": "rescue", "predicate": "is_listening", "equals": true, "score": 0.4, "reason": "Orr believes a rescue ship can hear the broadcast"},
+            {"subject_id": "sample", "predicate": "is_unstable", "equals": true, "score": -1.0, "reason": "Orr believes energizing the relay would endanger containment"}
+          ]
+        },
+        "facts": [
+          {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
+          {"subject_id": "crisis", "predicate": "outcome", "value": "distress_broadcast", "hidden": true}
+        ],
+        "observations": [
+          {"kind": "witnessed_action", "subject_id": "relay", "summary": "Technician Orr broadcast the distress packet and a rescue acknowledgment returned.", "salience": 0.95}
+        ],
+        "relationships": [
+          {"observer_id": "orr", "target_id": "player", "trust_delta": 0.15, "affinity_delta": 0.1, "when_requested_by_player": true, "reason": "The player backed Orr's successful rescue attempt."},
+          {"observer_id": "sable", "target_id": "player", "trust_delta": -0.25, "affinity_delta": -0.1, "when_requested_by_player": true, "reason": "The player supported energizing the relay despite Sable's containment warning."},
+          {"observer_id": "lin", "target_id": "player", "trust_delta": -0.15, "affinity_delta": -0.05, "when_requested_by_player": true, "reason": "The player accepted a rescue chance at the expense of sample containment."},
+          {"observer_id": "sable", "target_id": "orr", "trust_delta": -0.15, "affinity_delta": -0.1, "reason": "Orr energized the relay despite Sable's containment concerns."},
+          {"observer_id": "lin", "target_id": "orr", "trust_delta": -0.1, "affinity_delta": -0.05, "reason": "Orr broadcast before Lin could purge the unstable sample."}
+        ],
+        "goals": [
+          {"character_id": "orr", "goal_id": "broadcast_rescue", "status": "completed", "reason": "Orr sent the distress packet and received a rescue acknowledgment."},
+          {"character_id": "sable", "goal_id": "contain_sample", "status": "failed", "reason": "Energizing the relay left the unstable sample unsecured."},
+          {"character_id": "lin", "goal_id": "purge_sample", "status": "failed", "reason": "The broadcast ended the decision window before Lin could purge the sample."}
+        ],
+        "scheduled_events": [
+          {"type": "set_simulation_status", "delay_minutes": 10, "payload": {"status": "ended", "player_visible": true, "visible_message": "The immediate aftermath settles. This chapter of the relay crisis is over."}}
+        ],
+        "visible_message": "Orr broadcasts the distress packet. A rescue acknowledgment returns, but the energized relay leaves the unstable sample unsecured."
+      }
+    },
+    {
+      "id": "lin_purge_sample", "character_id": "lin", "location_id": "relay",
+      "label": "Purge the sample",
+      "description": "Vent the sample into the sterilization chamber, destroying it and the research it contains.",
+      "preconditions": [{"subject_id": "crisis", "predicate": "resolved", "equals": false}],
+      "effects": {
+        "cancel_events": ["crisis_warning"],
+        "facts": [
+          {"subject_id": "crisis", "predicate": "resolved", "value": true, "hidden": true},
+          {"subject_id": "crisis", "predicate": "outcome", "value": "sample_purged", "hidden": true}
+        ],
+        "observations": [
+          {"kind": "witnessed_action", "subject_id": "sample", "summary": "Dr. Lin purged the sample through the sterilization chamber, destroying it and its research value.", "salience": 0.95}
+        ],
+        "relationships": [
+          {"observer_id": "lin", "target_id": "player", "trust_delta": 0.15, "affinity_delta": 0.05, "when_requested_by_player": true, "reason": "The player supported Lin's protective purge decision."},
+          {"observer_id": "sable", "target_id": "player", "trust_delta": 0.1, "affinity_delta": 0.05, "when_requested_by_player": true, "reason": "The player chose a decisive form of containment."},
+          {"observer_id": "orr", "target_id": "player", "trust_delta": -0.1, "affinity_delta": -0.05, "when_requested_by_player": true, "reason": "The player let the rescue window pass in favor of the purge."},
+          {"observer_id": "sable", "target_id": "lin", "trust_delta": 0.1, "affinity_delta": 0.05, "reason": "Lin permanently removed the containment threat."},
+          {"observer_id": "orr", "target_id": "lin", "trust_delta": -0.1, "affinity_delta": -0.05, "reason": "Lin purged the sample before Orr could call for rescue."}
+        ],
+        "goals": [
+          {"character_id": "lin", "goal_id": "purge_sample", "status": "completed", "reason": "Lin destroyed the unstable sample in the sterilization chamber."},
+          {"character_id": "sable", "goal_id": "contain_sample", "status": "completed", "reason": "Purging the sample permanently contained the biological risk."},
+          {"character_id": "orr", "goal_id": "broadcast_rescue", "status": "abandoned", "reason": "The purge consumed the immediate crisis response window before Orr broadcast."}
+        ],
+        "scheduled_events": [
+          {"type": "set_simulation_status", "delay_minutes": 10, "payload": {"status": "ended", "player_visible": true, "visible_message": "The immediate aftermath settles. This chapter of the relay crisis is over."}}
+        ],
+        "visible_message": "Dr. Lin purges the sample. The contamination risk vanishes with years of research, while the relay remains available for a later rescue attempt."
+      }
+    }
+  ],
+  "events": [
+    {
+      "type": "narration",
+      "due_time": 6,
+      "cancellation_key": "crisis_warning",
+      "payload": {
+        "player_visible": true,
+        "message": "A warning tone rolls through the station. Reserve power is falling, and no one has committed to a response."
+      }
+    },
+    {
+      "type": "narration",
+      "due_time": 10,
+      "cancellation_key": "crisis_warning",
+      "payload": {
+        "player_visible": true,
+        "message": "The relay core climbs to a strained whine. The crew's window to choose is almost closed."
+      }
+    }
+  ]
+}
