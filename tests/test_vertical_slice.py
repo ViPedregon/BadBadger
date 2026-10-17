@@ -666,6 +666,102 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertFalse(expired["autonomous_eligible"])
             app.repository.close()
 
+    def test_conscious_biography_influences_autonomous_action_and_persists(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "biography-decision.json"
+            source.write_text(json.dumps({
+                "scenario_id": "biography-decision",
+                "locations": [
+                    {"id": "dock", "name": "Dock", "description": "A dock."},
+                ],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player",
+                     "location_id": "dock"},
+                    {"id": "mara", "kind": "npc", "name": "Mara",
+                     "location_id": "dock", "canon": {"biography": [{
+                         "id": "delayed_evacuation",
+                         "summary": "Command once delayed an evacuation.",
+                         "importance": 0.9,
+                         "awareness": "conscious",
+                         "certainty": 0.5,
+                         "action_influences": [{
+                             "action_id": "launch_rescue", "score": 0.6,
+                             "reason": "Mara refuses to repeat a delayed evacuation",
+                         }],
+                     }, {
+                         "id": "forgotten_accident",
+                         "summary": "Mara forgot a prior launch accident.",
+                         "awareness": "forgotten",
+                         "certainty": 1.0,
+                         "action_influences": [{
+                             "action_id": "launch_rescue", "score": -10,
+                             "reason": "The forgotten accident deters Mara",
+                         }],
+                     }]}},
+                ],
+                "npc_actions": [{
+                    "id": "launch_rescue", "character_id": "mara",
+                    "location_id": "dock", "label": "Launch the rescue craft",
+                    "description": "Begin a validated rescue launch.",
+                    "effects": {"decision": {
+                        "base_score": 0.2, "minimum_score": 0.5,
+                    }},
+                }],
+            }), encoding="utf-8")
+            database = Path(temp_dir) / "save.db"
+            app = open_prototype(database, scenario=source)
+
+            decision = app.repository.available_npc_actions("mara")[0]
+            self.assertAlmostEqual(decision["decision_score"], 0.5)
+            self.assertTrue(decision["autonomous_eligible"])
+            self.assertTrue(any(
+                "refuses to repeat" in reason and "certainty 0.50" in reason
+                for reason in decision["decision_reasons"]
+            ))
+            self.assertFalse(any(
+                "forgotten accident" in reason.lower()
+                for reason in decision["decision_reasons"]
+            ))
+            app.repository.close()
+
+            resumed = open_prototype(database)
+            fragment = resumed.repository.biography_fragments("mara")[0]
+            self.assertEqual(fragment["action_influences"][0]["action_id"],
+                             "launch_rescue")
+            resumed.repository.close()
+
+    def test_biography_cannot_influence_another_characters_action(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "foreign-biography-action.json"
+            source.write_text(json.dumps({
+                "scenario_id": "foreign-biography-action",
+                "locations": [
+                    {"id": "room", "name": "Room", "description": "A room."},
+                ],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player",
+                     "location_id": "room"},
+                    {"id": "one", "kind": "npc", "name": "One",
+                     "location_id": "room", "canon": {"biography": [{
+                         "id": "memory", "summary": "A memory.",
+                         "action_influences": [{
+                             "action_id": "other_action", "score": 1,
+                             "reason": "Try to control someone else",
+                         }],
+                     }]}},
+                    {"id": "two", "kind": "npc", "name": "Two",
+                     "location_id": "room"},
+                ],
+                "npc_actions": [{
+                    "id": "other_action", "character_id": "two",
+                    "location_id": "room", "label": "Act",
+                    "description": "An action.",
+                }],
+            }), encoding="utf-8")
+
+            with self.assertRaisesRegex(ScenarioError, "unknown or foreign action"):
+                load_scenario(source, Path(temp_dir) / "save.db")
+
     def test_engine_rejects_invented_npc_interaction(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
@@ -1014,6 +1110,88 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertIn("retired rescue pilot", inspected)
             self.assertIn("failed_evacuations", inspected)
             resumed.repository.close()
+
+    def test_character_canon_can_load_from_a_reusable_relative_dossier(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dossiers = root / "characters"
+            dossiers.mkdir()
+            (dossiers / "mara.json").write_text(json.dumps({
+                "role": "retired rescue pilot",
+                "voice": "dry and precise",
+                "values": ["competence"],
+                "boundaries": ["never invents certainty"],
+                "biography": [{
+                    "id": "old_rescue",
+                    "summary": "Mara once led a difficult rescue.",
+                    "importance": 0.8,
+                    "visibility": "public",
+                    "awareness": "conscious",
+                    "certainty": 1.0,
+                    "topics": ["rescue"],
+                    "emotional_tags": ["pride"],
+                    "related_character_ids": [],
+                }],
+            }), encoding="utf-8")
+            scenario = root / "scenario.json"
+            scenario.write_text(json.dumps({
+                "scenario_id": "dossier-test",
+                "locations": [
+                    {"id": "dock", "name": "Dock", "description": "A dock."},
+                ],
+                "characters": [
+                    {"id": "player", "kind": "player", "name": "Player",
+                     "location_id": "dock"},
+                    {"id": "mara", "kind": "npc", "name": "Mara",
+                     "location_id": "dock", "canon_file": "characters/mara.json"},
+                ],
+            }), encoding="utf-8")
+            database = root / "save.db"
+
+            app = open_prototype(database, scenario=scenario)
+            self.assertEqual(
+                app.repository.character_canon("mara")["role"],
+                "retired rescue pilot",
+            )
+            app.repository.close()
+            resumed = open_prototype(database)
+            self.assertEqual(
+                resumed.repository.biography_fragments("mara")[0]["id"],
+                "old_rescue",
+            )
+            resumed.repository.close()
+
+    def test_character_dossier_rejects_conflicts_and_path_traversal(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            outside = root.parent / f"{root.name}-outside-canon.json"
+            outside.write_text("{}", encoding="utf-8")
+            try:
+                base = {
+                    "scenario_id": "unsafe-dossier",
+                    "locations": [{
+                        "id": "room", "name": "Room", "description": "A room."
+                    }],
+                    "characters": [
+                        {"id": "player", "kind": "player", "name": "Player",
+                         "location_id": "room"},
+                        {"id": "npc", "kind": "npc", "name": "NPC",
+                         "location_id": "room",
+                         "canon_file": f"../{outside.name}"},
+                    ],
+                }
+                scenario = root / "scenario.json"
+                scenario.write_text(json.dumps(base), encoding="utf-8")
+                with self.assertRaisesRegex(ScenarioError, "stay inside"):
+                    load_scenario(scenario, root / "unsafe.db")
+
+                base["characters"][1]["canon_file"] = "canon.json"
+                base["characters"][1]["canon"] = {}
+                scenario.write_text(json.dumps(base), encoding="utf-8")
+                with self.assertRaisesRegex(ScenarioError, "both canon and canon_file"):
+                    load_scenario(scenario, root / "conflict.db")
+            finally:
+                outside.unlink(missing_ok=True)
 
     def test_biography_retrieval_is_bounded_and_excludes_inaccessible_memory(self):
         canon = {

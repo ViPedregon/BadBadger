@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS character_biography_fragments (
     fragment_id TEXT NOT NULL,
     summary TEXT NOT NULL,
     behavioral_guidance TEXT,
+    action_influences_json TEXT NOT NULL DEFAULT '[]',
     importance REAL NOT NULL DEFAULT 0.5
         CHECK(importance >= 0 AND importance <= 1),
     visibility TEXT NOT NULL DEFAULT 'private'

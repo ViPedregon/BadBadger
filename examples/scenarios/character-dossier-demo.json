@@ -1,0 +1,51 @@
+{
+  "scenario_id": "character-dossier-demo",
+  "presentation": {
+    "title": "Character Dossier Demo",
+    "intro": "You meet a retired pilot in a quiet dock office.",
+    "objective": "Ask Mara about rescue work, authority, and difficult decisions."
+  },
+  "locations": [
+    {
+      "id": "dock",
+      "name": "Dock Office",
+      "description": "A narrow office overlooking an empty launch cradle.",
+      "appearance": {
+        "lighting": "cool work lights",
+        "materials": "brushed steel and worn composite"
+      }
+    }
+  ],
+  "characters": [
+    {
+      "id": "player",
+      "kind": "player",
+      "name": "Player",
+      "location_id": "dock"
+    },
+    {
+      "id": "mara",
+      "kind": "npc",
+      "name": "Mara Venn",
+      "location_id": "dock",
+      "canon_file": "characters/mara-venn.json",
+      "appearance": {
+        "age": "late fifties",
+        "build": "lean",
+        "clothing": "faded flight jacket over dock coveralls",
+        "hair": "close-cropped silver hair"
+      },
+      "parameters": {
+        "autonomy_enabled": false,
+        "temperament": "watchful and unsentimental"
+      },
+      "goals": [
+        {
+          "id": "assess_player",
+          "description": "Decide whether the visitor understands the cost of command decisions.",
+          "priority": 2
+        }
+      ]
+    }
+  ]
+}

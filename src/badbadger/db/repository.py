@@ -69,6 +69,11 @@ class GameRepository:
                 "ALTER TABLE character_biography_fragments "
                 "ADD COLUMN behavioral_guidance TEXT"
             )
+        if "action_influences_json" not in biography_columns:
+            self.connection.execute(
+                "ALTER TABLE character_biography_fragments "
+                "ADD COLUMN action_influences_json TEXT NOT NULL DEFAULT '[]'"
+            )
         self.connection.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS npc_goals_by_stable_id "
             "ON npc_goals(character_id, goal_id)"
@@ -202,14 +207,16 @@ class GameRepository:
                 """
                 INSERT INTO character_biography_fragments(
                     character_id,fragment_id,summary,behavioral_guidance,
+                    action_influences_json,
                     importance,visibility,
                     awareness,certainty,topics_json,emotional_tags_json,
                     related_character_ids_json,period,source
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     character_id, fragment["id"], fragment["summary"],
                     fragment.get("behavioral_guidance"),
+                    json.dumps(fragment.get("action_influences", [])),
                     float(fragment.get("importance", 0.5)),
                     fragment.get("visibility", "private"),
                     fragment.get("awareness", "conscious"),
@@ -249,6 +256,7 @@ class GameRepository:
                 "id": row["fragment_id"],
                 "summary": row["summary"],
                 "behavioral_guidance": row["behavioral_guidance"],
+                "action_influences": json.loads(row["action_influences_json"]),
                 "importance": float(row["importance"]),
                 "visibility": row["visibility"],
                 "awareness": row["awareness"],
@@ -421,7 +429,7 @@ class GameRepository:
             ):
                 effects = json.loads(row["effects_json"])
                 decision = self._evaluate_action_decision(
-                    character_id, effects.get("decision", {})
+                    character_id, row["id"], effects.get("decision", {})
                 )
                 actions.append({
                     "id": row["id"],
@@ -433,12 +441,26 @@ class GameRepository:
         return actions
 
     def _evaluate_action_decision(
-        self, character_id: str, policy: dict[str, Any]
+        self, character_id: str, action_id: str, policy: dict[str, Any]
     ) -> dict[str, Any]:
         """Compute explainable utility from inspectable NPC state."""
         score = float(policy.get("base_score", 1.0))
         minimum = float(policy.get("minimum_score", 0.0))
         reasons = [f"Base score: {score:+.2f}."]
+        for fragment in self.biography_fragments(character_id):
+            if fragment["awareness"] != "conscious":
+                continue
+            for influence in fragment["action_influences"]:
+                if influence["action_id"] != action_id:
+                    continue
+                authored_change = float(influence["score"])
+                certainty = float(fragment["certainty"])
+                change = authored_change * certainty
+                score += change
+                reasons.append(
+                    f"{influence['reason']} ({change:+.2f}; canon "
+                    f"{authored_change:+.2f} x certainty {certainty:.2f})."
+                )
         parameters = self.npc_parameters(character_id)
         for factor in policy.get("parameter_factors", []):
             actual = parameters.get(factor["parameter"])
@@ -699,7 +721,7 @@ class GameRepository:
         effects = json.loads(row["effects_json"])
         if autonomous:
             decision = self._evaluate_action_decision(
-                character_id, effects.get("decision", {})
+                character_id, action_id, effects.get("decision", {})
             )
             if not decision["autonomous_eligible"]:
                 return False, "The NPC's current priorities weigh against that action."

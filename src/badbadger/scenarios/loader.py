@@ -14,6 +14,46 @@ class ScenarioError(ValueError):
     pass
 
 
+def _load_character_dossiers(data: dict[str, Any], scenario_directory: Path) -> None:
+    """Resolve scenario-relative canon files before normal validation."""
+    characters = data.get("characters")
+    if not isinstance(characters, list):
+        return
+    root = scenario_directory.resolve()
+    for character in characters:
+        if not isinstance(character, dict) or "canon_file" not in character:
+            continue
+        character_id = character.get("id", "<unknown>")
+        relative = character["canon_file"]
+        if not isinstance(relative, str) or not relative.strip():
+            raise ScenarioError(
+                f"Canon file for {character_id} must be non-empty text"
+            )
+        if character.get("canon") is not None:
+            raise ScenarioError(
+                f"Character {character_id} cannot define both canon and canon_file"
+            )
+        candidate = Path(relative)
+        if candidate.is_absolute():
+            raise ScenarioError(f"Canon file for {character_id} must be relative")
+        resolved = (root / candidate).resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as error:
+            raise ScenarioError(
+                f"Canon file for {character_id} must stay inside the scenario directory"
+            ) from error
+        try:
+            canon = json.loads(resolved.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ScenarioError(
+                f"Cannot read canon file for {character_id}: {error}"
+            ) from error
+        if not isinstance(canon, dict):
+            raise ScenarioError(f"Canon file for {character_id} must contain an object")
+        character["canon"] = canon
+
+
 def _required(data: dict[str, Any], key: str, expected: type) -> Any:
     value = data.get(key)
     if not isinstance(value, expected):
@@ -55,7 +95,8 @@ def _validate_character_canon(
         raise ScenarioError(f"Biography for {character['id']} must be a list")
     fragment_ids: set[str] = set()
     allowed_fragment = {
-        "id", "summary", "behavioral_guidance", "importance", "visibility",
+        "id", "summary", "behavioral_guidance", "action_influences",
+        "importance", "visibility",
         "awareness", "certainty", "topics", "emotional_tags",
         "related_character_ids", "period", "source",
     }
@@ -112,6 +153,39 @@ def _validate_character_canon(
                 raise ScenarioError(
                     f"Biography {key} for {character['id']} must be non-empty text"
                 )
+        influences = fragment.get("action_influences", [])
+        if not isinstance(influences, list):
+            raise ScenarioError(
+                f"Biography action influences for {character['id']} must be a list"
+            )
+        influenced_actions: set[str] = set()
+        for influence in influences:
+            if not isinstance(influence, dict) or set(influence) != {
+                "action_id", "score", "reason"
+            }:
+                raise ScenarioError(
+                    f"Invalid biography action influence for {character['id']}"
+                )
+            if not all(
+                isinstance(influence[key], str) and influence[key].strip()
+                for key in ("action_id", "reason")
+            ):
+                raise ScenarioError(
+                    f"Biography action influence text for {character['id']} is invalid"
+                )
+            if (
+                not isinstance(influence["score"], (int, float))
+                or isinstance(influence["score"], bool)
+            ):
+                raise ScenarioError(
+                    f"Biography action influence score for {character['id']} is invalid"
+                )
+            if influence["action_id"] in influenced_actions:
+                raise ScenarioError(
+                    f"Duplicate biography action influence for {character['id']}: "
+                    f"{influence['action_id']}"
+                )
+            influenced_actions.add(influence["action_id"])
 
 
 def _validate(data: dict[str, Any]) -> None:
@@ -277,11 +351,15 @@ def _validate(data: dict[str, Any]) -> None:
                 raise ScenarioError(
                     f"Disclosure confidence for {disclosure['id']} must be between 0 and 1"
                 )
+    action_owners: dict[str, str] = {}
     for action in data.get("npc_actions", []):
         if not isinstance(action, dict):
             raise ScenarioError("Each NPC action must be an object")
         for key in ("id", "character_id", "location_id", "label", "description"):
             _required(action, key, str)
+        if action["id"] in action_owners:
+            raise ScenarioError(f"Duplicate NPC action id: {action['id']}")
+        action_owners[action["id"]] = action["character_id"]
         if action["character_id"] not in character_ids:
             raise ScenarioError(f"NPC action references unknown character: {action['character_id']}")
         if character_kinds[action["character_id"]] != "npc":
@@ -634,6 +712,16 @@ def _validate(data: dict[str, Any]) -> None:
         }:
             raise ScenarioError(f"Invalid mission status for action {action['id']}")
 
+    for character in characters:
+        canon = character.get("canon") or {}
+        for fragment in canon.get("biography", []):
+            for influence in fragment.get("action_influences", []):
+                if action_owners.get(influence["action_id"]) != character["id"]:
+                    raise ScenarioError(
+                        f"Biography action influence for {character['id']} references "
+                        "an unknown or foreign action"
+                    )
+
     events = data.get("events", [])
     if not isinstance(events, list):
         raise ScenarioError("Scenario events must be a list")
@@ -674,6 +762,7 @@ def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
         raise ScenarioError(f"Cannot read scenario {source}: {error}") from error
     if not isinstance(data, dict):
         raise ScenarioError("Scenario root must be an object")
+    _load_character_dossiers(data, source.parent)
     scenario_id = _required(data, "scenario_id", str)
     _validate(data)
     locations = data["locations"]

@@ -155,6 +155,11 @@ Characters may define durable authored identity separately from mission state:
     "id": "failed_evacuations",
     "summary": "Mara believes command delayed a fatal evacuation.",
     "behavioral_guidance": "Mara becomes guarded around authority and evacuation timing.",
+    "action_influences": [{
+      "action_id": "launch_rescue",
+      "score": 0.6,
+      "reason": "Mara refuses to repeat a delayed evacuation"
+    }],
     "importance": 0.95,
     "visibility": "secret",
     "awareness": "conscious",
@@ -167,6 +172,28 @@ Characters may define durable authored identity separately from mission state:
   }]
 }
 ```
+
+For production characters, keep that object in a separate dossier and reference
+it relative to the scenario:
+
+```json
+{
+  "id": "mara",
+  "kind": "npc",
+  "name": "Mara Venn",
+  "location_id": "dock",
+  "canon_file": "characters/mara-venn.json"
+}
+```
+
+The dossier file contains the `canon` object's contents directly. Paths must be
+relative and remain inside the scenario's directory tree; a character cannot
+define both `canon` and `canon_file`. Dossiers are resolved and passed through
+the same strict validation before a save is created. This keeps reusable role,
+voice, values, boundaries, and biography separate from scenario-specific
+location, goals, beliefs, relationships, and available actions. See
+`examples/scenarios/characters/mara-venn.json` and
+`examples/scenarios/character-dossier-demo.json` for a minimal authoring pair.
 
 Visibility is `public`, `private`, or `secret`; awareness is `conscious`,
 `suppressed`, or `forgotten`. Importance and certainty range from zero to one.
@@ -184,6 +211,13 @@ summary, while private and secret fragments provide only separately authored
 `behavioral_guidance`; their underlying summaries never enter the model prompt.
 Actual secret disclosure remains under the existing engine-controlled
 disclosure system.
+
+An optional `action_influences` list gives durable history a deterministic,
+inspectable gameplay effect. Each influence may affect only an action authored
+for that character. The engine multiplies its score by the fragment's certainty
+and applies it only while the memory is conscious. This changes whether an NPC
+chooses an already validated action; biography prose and the AI backend still
+cannot create actions or mutate world state.
 
 Launching it again with the same `--save` path resumes the simulation. The
 current deterministic text interpreter accepts natural-looking forms of the
