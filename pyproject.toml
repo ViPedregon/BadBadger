@@ -10,6 +10,14 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+web = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+]
+web-test = [
+    "httpx>=0.27,<1",
+    "playwright>=1.48,<2",
+]
 openai = [
     "openai>=2,<3",
     "pydantic>=2,<3",
@@ -17,12 +25,14 @@ openai = [
 
 [project.scripts]
 badbadger = "badbadger.cli:main"
+badbadger-web = "badbadger.web:main"
+badbadger-save = "badbadger.backup:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-badbadger = ["db/schema.sql", "scenarios/*.json"]
+badbadger = ["db/schema.sql", "scenarios/*.json", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

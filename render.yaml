@@ -1,0 +1,20 @@
+# Paid single-instance service: the persistent disk is required for SQLite.
+# Review the account's current price before applying this Blueprint.
+services:
+  - type: web
+    name: badbadger
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r deploy/requirements-web.txt && pip install --no-deps '.[web]'
+    startCommand: badbadger-web --save /var/data/badbadger/relay.db --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    autoDeployTrigger: "off"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.14
+      - key: BADBADGER_WEB_PASSWORD
+        generateValue: true
+    disk:
+      name: badbadger-save
+      mountPath: /var/data/badbadger
+      sizeGB: 1

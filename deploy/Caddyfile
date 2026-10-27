@@ -1,0 +1,11 @@
+# Replace the hostname before enabling this configuration.
+badbadger.example.com {
+	request_body {
+		max_size 16KB
+	}
+	reverse_proxy 127.0.0.1:8000 {
+		transport http {
+			response_header_timeout 30s
+		}
+	}
+}

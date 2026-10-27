@@ -18,6 +18,7 @@ class GameRepository:
         self.connection = sqlite3.connect(self.database)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
+        self._transaction_depth = 0
 
     def close(self) -> None:
         self.connection.close()
@@ -30,14 +31,30 @@ class GameRepository:
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
-        """Commit a complete engine operation or roll it back as a unit."""
+        """Join an outer operation without letting inner services commit it."""
+        depth = self._transaction_depth
+        savepoint = f"operation_{depth}"
+        if depth:
+            self.connection.execute(f"SAVEPOINT {savepoint}")
+        elif not self.connection.in_transaction:
+            self.connection.execute("BEGIN IMMEDIATE")
+        self._transaction_depth += 1
         try:
             yield
-        except Exception:
-            self.connection.rollback()
+        except BaseException:
+            if depth:
+                self.connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                self.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+            else:
+                self.connection.rollback()
             raise
         else:
-            self.connection.commit()
+            if depth:
+                self.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+            else:
+                self.connection.commit()
+        finally:
+            self._transaction_depth -= 1
 
     def create_schema(self) -> None:
         schema = files("badbadger.db").joinpath("schema.sql").read_text(encoding="utf-8")
@@ -1461,7 +1478,8 @@ class GameRepository:
 
     def examinable_subject_ids(self) -> list[str]:
         rows = self.connection.execute(
-            "SELECT subject_id FROM facts WHERE predicate = 'description' ORDER BY subject_id"
+            "SELECT subject_id FROM facts "
+            "WHERE predicate = 'description' AND hidden = 0 ORDER BY subject_id"
         ).fetchall()
         return [str(row["subject_id"]) for row in rows]
 

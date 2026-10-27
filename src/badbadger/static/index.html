@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BadBadger · Relay Crisis</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><p class="eyebrow">BADBADGER</p><h1>Relay Crisis</h1><p>A station in trouble. Three conflicting plans. Your next move.</p></header>
+    <section id="status" aria-label="Current situation"></section>
+    <section id="transcript" aria-label="Story so far" tabindex="0"></section>
+    <p id="notice" role="status">Opening your saved game…</p>
+    <form id="command-form">
+      <label for="command">What do you do?</label>
+      <div class="input-row"><input id="command" name="command" maxlength="2000" autocomplete="off" placeholder="Try look, choices, or ask someone a question" required disabled><button id="send" disabled>Send</button></div>
+    </form>
+    <div class="controls"><button id="refresh" type="button">Refresh saved game</button><button id="retry" type="button" hidden>Retry pending turn</button></div>
+    <footer>Your progress is saved after each turn. Close this page and return to continue.</footer>
+  </main>
+</body>
+</html>

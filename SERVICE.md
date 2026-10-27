@@ -1,0 +1,77 @@
+# Relay Crisis service boundary
+
+`badbadger.service.RelayService` is the offline application boundary used by the
+authenticated web adapter in `badbadger.web` (see [WEB.md](WEB.md)). It uses
+the existing Python game engine and does not enable OpenAI, even when an API
+key exists in the environment.
+
+Construct it once at startup with a server-owned SQLite path:
+
+```python
+from badbadger.service import RelayService, TurnConflict
+
+game = RelayService("/path/to/persistent/relay.db")
+view = game.view()
+result = game.submit(
+    request_id="unique-id-for-this-submission",
+    command="go to Relay Chamber",
+    expected_revision=view["revision"],
+)
+```
+
+Reconstructing the service with that same path resumes the save and transcript.
+Do not run its initializer during active gameplay. A pre-existing Relay Crisis
+save can be opened, but its old CLI transcript cannot be recovered safely from
+private engine history; only submissions made through this service appear in
+the new transcript. Do not alternate CLI writes with service play: CLI writes
+do not update service revisions or receipts.
+
+`view()` returns an opening, current public status, revision, and persisted
+player-facing transcript. `submit()` returns messages, status, revision, and a
+session-exit hint (`should_quit`). Quitting does not reset or end the mission.
+Every accepted submission, including a read command, increments the revision.
+To refresh without submitting a command, use `view()`.
+
+The client should generate a request id once, retain it until it has received a
+response, and reuse it with the exact same command after a network timeout.
+A committed duplicate returns its original response, even if its expected
+revision is now old. Reusing an id with different text raises `TurnConflict`.
+A new request with an old revision also raises `TurnConflict`; refresh the view
+and ask the player to submit again. Do not silently retry a stale new command.
+The web adapter should translate conflicts into HTTP 409 and validation errors
+into HTTP 400, while keeping unexpected database/engine errors private.
+
+Each call owns its SQLite connection on the calling thread. A `BEGIN IMMEDIATE`
+transaction serializes submissions, checks revision/id, runs the full turn,
+and commits state, transcript and receipt together. Nested repository operations
+use savepoints; they cannot commit the outer turn early. Exceptions roll back
+the entire turn. SQLite's default lock timeout can produce a database-busy error
+under contention; retry the same request id rather than inventing a new one.
+Only local persistent SQLite on one host is supported. A future network adapter
+should put this blocking work on a bounded executor, not its async event loop.
+
+The service explicitly disables developer mode, never returns raw engine history
+or NPC context, and replaces `summary`/`recap` with public status because the CLI
+summary contains private global goal outcomes. Hidden description facts are
+excluded from the application's examinable targets. This is not a general
+scenario visibility redesign: public descriptions remain globally examinable,
+as before. Relay Crisis's authored situation table is the current target.
+
+Run the complete test suite from the repository root:
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+Service tests cover same-id retries, stale revisions, simultaneous submissions,
+failure after the main action, failure saving a response after NPC processing,
+resume, a completed rescue, and representative private-output checks.
+
+The web adapter supplies single-user authentication, a same-origin HTTP API,
+an escaped-text browser UI, and input/rate limits. Before remote deployment,
+configure HTTPS, persistent storage, off-host SQLite backups and a tested restore.
+Never accept a database path from
+the browser, serve scenario JSON/save files as assets, or expose engine objects.
+Use a fresh save for browser acceptance tests. Live AI dialogue remains a
+separate integration requiring additional output/privacy tests and server-only
+credentials. This module alone is not a hosted or authenticated application.

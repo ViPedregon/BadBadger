@@ -4,6 +4,14 @@ A dialogue-driven game prototype where NPCs act from their own knowledge,
 beliefs, relationships, personalities, and goals while a deterministic engine
 owns world state and validates every consequence.
 
+## Browser application
+
+An offline, password-protected Relay Crisis browser application is available.
+It saves every turn in SQLite and resumes the same game after closing the
+browser or restarting the server. See [WEB.md](WEB.md) for setup, authentication,
+testing, and the remaining remote hosting steps. The Python engine owns all
+game rules; the browser displays player-facing text only.
+
 ## Play Relay Crisis
 
 On Windows, double-click `play.cmd`. The first launch creates an isolated local
