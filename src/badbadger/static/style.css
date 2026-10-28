@@ -1,7 +1,7 @@
 :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111715; color: #e5e9df; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-main { max-width: 850px; margin: auto; padding: 32px 20px 48px; }
+main { max-width: 850px; margin: auto; padding: 32px 20px 240px; }
 header { border-bottom: 1px solid #465448; padding-bottom: 16px; }
 .eyebrow { letter-spacing: .2em; color: #adca8c; font-size: .8rem; }
 h1 { font-family: Georgia, serif; font-size: 2.5rem; margin: 12px 0; }
@@ -20,4 +20,14 @@ input:focus-visible, button:focus-visible, section:focus-visible { outline: 3px 
 .controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .controls button { background: transparent; border: 1px solid #83977c; color: #d2dec7; }
 footer { font-size: .85rem; margin-top: 28px; line-height: 1.6; }
-@media (max-width: 480px) { main { padding: 20px 14px; } .input-row { flex-wrap: wrap; } .input-row button { width: 100%; } }
+.guidance { margin: 20px 0; line-height: 1.6; }
+#objective { color: #d5e5bd; font-weight: 600; }
+#phase { color: #e4c681; }
+details { border: 1px solid #465448; padding: 10px 14px; border-radius: 4px; }
+summary { cursor: pointer; }
+.guidance .controls button { padding: 9px 12px; font-size: .9rem; text-align: left; }
+#recap { white-space: pre-wrap; line-height: 1.7; background: #202c23; border: 1px solid #83977c; padding: 18px; margin: 24px 0; }
+.composer { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: min(850px, 100%); padding: 12px 20px; background: #111715; border-top: 1px solid #465448; z-index: 2; }
+.composer label { margin-top: 0; }
+.composer footer { margin: 10px 0 0; }
+@media (max-width: 480px) { main { padding: 20px 14px 240px; } .composer { padding: 12px 14px; } }

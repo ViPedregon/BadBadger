@@ -99,6 +99,19 @@ class BrowserTests(unittest.TestCase):
         expect(self.page.locator("#transcript")).to_contain_text("rescue acknowledgment")
         self.command("wait 10 minutes")
         expect(self.page.locator("#status")).to_contain_text("Mission status: ended")
+        expect(self.page.locator("#phase")).to_contain_text("chapter is complete")
+        expect(self.page.locator("#recap")).to_contain_text("rescue acknowledgment")
+
+    def test_guidance_fills_commands_without_spending_time(self):
+        expect(self.page.locator("#objective")).to_contain_text("Question the crew")
+        self.page.get_by_text("How mission time works", exact=True).click()
+        self.page.locator('button[data-command="examine situation table"]').click()
+        expect(self.page.locator("#command")).to_have_value("examine situation table")
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 0 minutes.")
+        expect(self.page.locator(".player")).to_have_count(0)
+        self.page.locator('button[data-consequential="true"]').click()
+        expect(self.page.locator("#notice")).to_contain_text("irreversible if accepted")
+        expect(self.page.locator(".player")).to_have_count(0)
 
     def test_lost_response_reload_and_retry_executes_once(self):
         def lose_response(route):

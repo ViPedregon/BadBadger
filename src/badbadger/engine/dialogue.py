@@ -37,10 +37,11 @@ class DialogueService:
         )
         response = self.backend.respond(context, player_input)
         self._validate_response(response)
+        presented_dialogue = ("I haven't taken that action." if response.degraded and response.proposed_actions
+                              else response.dialogue)
 
         with self.repository.transaction():
             self.repository.append_dialogue(npc_id, player["id"], player_input)
-            self.repository.append_dialogue(npc_id, npc_id, response.dialogue)
             if not response.degraded:
                 # Only old recaps are covered: new outcomes during this exchange
                 # must still be eligible for reactions, as must other NPCs.
@@ -62,6 +63,8 @@ class DialogueService:
                             self.repository, npc_id, proposal, requested_by_player=True
                         )
                     proposal_results.append({"accepted":accepted,"proposal":proposal.__dict__})
+                    if proposal.kind == "interact" and not accepted:
+                        presented_dialogue = "I haven't taken that action."
                     if message:
                         event_messages.append(message)
                 belief_results = []
@@ -123,9 +126,11 @@ class DialogueService:
                         "result": values,
                     })
                 # A successful exchange advances time, then normal events run.
+                self.repository.append_dialogue(npc_id, npc_id, presented_dialogue)
                 self.repository.advance_time(1)
                 event_messages.extend(process_due_events(self.repository))
             else:
+                self.repository.append_dialogue(npc_id, npc_id, presented_dialogue)
                 event_messages = [
                     "(AI dialogue was temporarily unavailable. This offline reply "
                     "did not advance time.)"
@@ -135,7 +140,7 @@ class DialogueService:
                 actor_id=player["id"],
                 input_data={"npc_id": npc_id, "player_input": player_input},
                 result_data={
-                    "dialogue": response.dialogue,
+                    "dialogue": presented_dialogue,
                     "degraded": response.degraded,
                     "biography_context": [
                         {
@@ -153,7 +158,7 @@ class DialogueService:
                     "action_proposals": proposal_results if not response.degraded else [],
                 },
             )
-        return [f"{npc['name']}: \"{response.dialogue}\"", *event_messages]
+        return [f"{npc['name']}: \"{presented_dialogue}\"", *event_messages]
 
     @staticmethod
     def _interaction_requested(

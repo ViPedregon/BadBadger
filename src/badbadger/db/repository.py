@@ -750,7 +750,9 @@ class GameRepository:
             ).fetchone()
             trust = float(relationship["trust"]) if relationship else 0.0
             if trust < float(effects["player_trust_required"]):
-                return False, f"{character['name']} does not trust you enough to do that."
+                return False, (f"{character['name']} does not trust you enough to do that. "
+                               "Ask about their concerns and build trust before requesting this commitment again. "
+                               "No action was taken.")
         for fact in effects.get("facts", []):
             self.set_fact(
                 fact["subject_id"], fact["predicate"], fact["value"],
@@ -772,6 +774,15 @@ class GameRepository:
                     subject_id=observation.get("subject_id"),
                     source_character_id=character_id,
                 )
+        player = self.get_player()
+        if player["location_id"] == row["location_id"] and effects.get("visible_message"):
+            self.add_memory(player["id"], row["location_id"], "visible_consequence",
+                            str(effects["visible_message"]), salience=1.0,
+                            source_character_id=character_id)
+            if requested_by_player:
+                self.add_memory(player["id"], row["location_id"], "player_request",
+                                f"You asked {character['name']} to {row['label'].lower()}.",
+                                salience=0.95, source_character_id=player["id"])
         for goal_effect in effects.get("goals", []):
             self.set_goal_status(
                 goal_effect["character_id"], goal_effect["goal_id"],
@@ -896,6 +907,20 @@ class GameRepository:
             }
             for row in rows
         ]
+
+    def player_consequences(self) -> list[dict[str, Any]]:
+        return [dict(row) for row in self.connection.execute(
+            "SELECT game_time,memory_kind,summary FROM memories WHERE character_id=? "
+            "AND memory_kind IN ('visible_consequence','player_request') ORDER BY id",
+            (self.get_player()["id"],),
+        )]
+
+    def public_chapter_deadline(self) -> int | None:
+        row = self.connection.execute(
+            "SELECT min(due_time) AS deadline FROM scheduled_events WHERE status='pending' "
+            "AND event_type='set_simulation_status' AND json_extract(payload_json,'$.player_visible')=1"
+        ).fetchone()
+        return row["deadline"] if row else None
 
     def pending_goal_reaction_ids(self, npc_id: str) -> list[int]:
         return [int(row["id"]) for row in self.connection.execute(

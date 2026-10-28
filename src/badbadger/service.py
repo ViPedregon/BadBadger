@@ -90,6 +90,7 @@ class RelayService:
                 return {
                     "revision": session["revision"],
                     "dialogue_mode": "ai" if self.backend_label.startswith("OpenAI") else "offline",
+                    "guidance": self._app(repository).player_guidance(),
                     "opening": json.loads(session["opening_json"]),
                     "status": self._app(repository).status(),
                     "transcript": [
@@ -127,7 +128,7 @@ class RelayService:
                 # The CLI summary includes global private goal outcomes. Until a
                 # player-knowledge summary exists, expose only public status.
                 if normalized in {"summary", "recap"}:
-                    messages, should_quit = app.status(), False
+                    messages, should_quit = app.player_summary(), False
                 else:
                     messages, should_quit = app.handle(command)
                 response = {

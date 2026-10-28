@@ -23,6 +23,7 @@ function controls() {
   retry.disabled = busy;
   retry.textContent = pending && pending.operation === "new-game" ? "Retry new game" : "Retry pending turn";
   newGame.disabled = input.disabled;
+  document.querySelectorAll("[data-command]").forEach(button => { button.disabled = input.disabled; });
 }
 function message(text, player = false) {
   const p = document.createElement("p");
@@ -45,8 +46,28 @@ async function load() {
   document.querySelector("#dialogue-mode").textContent = view.dialogue_mode === "ai"
     ? "AI dialogue is configured." : "Offline dialogue: try the commands in help.";
   document.querySelector("#status").textContent = view.status.join("\n");
+  const guidance = view.guidance;
+  if (guidance) {
+    document.querySelector("#objective").textContent = `Objective: ${guidance.objective}`;
+    document.querySelector("#phase").textContent = guidance.message;
+    const recap = document.querySelector("#recap");
+    recap.hidden = guidance.recap.length === 0;
+    recap.textContent = guidance.recap.join("\n");
+    const suggestions = document.querySelector("#suggestions");
+    suggestions.replaceChildren();
+    guidance.suggestions.forEach(suggestion => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = suggestion.label;
+      button.dataset.command = suggestion.command;
+      button.dataset.consequential = String(suggestion.consequential);
+      suggestions.append(button);
+    });
+  }
   transcript.replaceChildren();
-  view.opening.forEach(text => message(text));
+  // Title and premise belong in the story; current objective, timing and
+  // surroundings already have persistent panels above it.
+  view.opening.slice(0, 2).forEach(text => message(text));
   view.transcript.forEach(turn => {
     message(turn.command, true);
     turn.messages.forEach(text => message(text));
@@ -113,6 +134,15 @@ newGame.addEventListener("click", () => {
   if (busy || pending || revision === null || !storageAvailable) return;
   if (!window.confirm("Start a new Relay Crisis game? Your current playthrough will be archived on the server. The new game begins at the start of the crisis.")) return;
   persistAndSubmit({ operation: "new-game", request_id: crypto.randomUUID(), expected_revision: revision, confirmed: true });
+});
+document.addEventListener("click", event => {
+  const button = event.target.closest("button[data-command]");
+  if (!button || input.disabled) return;
+  input.value = button.dataset.command;
+  input.focus();
+  notice.textContent = button.dataset.consequential === "true"
+    ? "This request is irreversible if accepted. Review it, then Send if you want to commit."
+    : "Command selected. Review it, then Send.";
 });
 retry.addEventListener("click", submitPending);
 refresh.addEventListener("click", async () => {

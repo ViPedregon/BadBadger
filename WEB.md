@@ -48,8 +48,21 @@ before it is shown as saved. Close the page and reopen it to resume; the save
 also survives a server restart when the same database path is used. Game time
 does not advance while the page is closed. **New game** asks for confirmation,
 archives the current playthrough on the server, and starts Relay Crisis at minute
-zero. There is no developer inspector. `summary` returns public status rather than
-private NPC goal outcomes.
+zero. There is no developer inspector. `summary` reports only consequences you
+witnessed and accepted requests you made, rather than private NPC goal outcomes.
+
+The objective and current phase stay visible above the story. Suggestions show
+travel/conversation/examination costs and flag irreversible requests. Selecting
+a suggestion only fills the input; **Send** commits it. **How mission time works**
+explains the clock without spending a turn. Journal, Help and People shortcuts
+also fill the input without submitting. Reading those commands is free.
+
+Witnessed decisions produce an aftermath recap and show the remaining public
+aftermath window. The chapter-complete panel offers a recap and the existing
+New game action for replay. If a decision happened offscreen, the recap does not
+reveal its hidden outcome. Existing saves from before this update may not have
+recorded witnessed consequences; old transcripts remain available, but the
+application does not invent missing knowledge from private history.
 
 New games keep the same login and AI configuration. The current page shows only
 the new playthrough's transcript; old engine state and turn history remain in

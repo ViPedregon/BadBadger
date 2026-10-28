@@ -65,8 +65,12 @@ Only local persistent SQLite on one host is supported. A future network adapter
 should put this blocking work on a bounded executor, not its async event loop.
 
 The service explicitly disables developer mode, never returns raw engine history
-or NPC context, and replaces `summary`/`recap` with public status because the CLI
-summary contains private global goal outcomes. Hidden description facts are
+or NPC context, and routes `summary`/`recap` to a player-safe summary of witnessed
+consequences and accepted player requests. The private developer summary is not
+exposed. `view().guidance` supplies objective, phase, command suggestions and the
+public recap; the browser contains no rules for resolving them. Public outcome
+memories are created only by validated actions while the player is present.
+Hidden description facts are
 excluded from the application's examinable targets. This is not a general
 scenario visibility redesign: public descriptions remain globally examinable,
 as before. Relay Crisis's authored situation table is the current target.

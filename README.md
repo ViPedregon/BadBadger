@@ -130,9 +130,12 @@ python -m badbadger.cli --save relay-crisis.db --scenario src\badbadger\scenario
 ```
 
 Begin with `examine situation table`, use `npc` and `npc <name>` for debugging,
-and speak naturally to Director Sable, Technician Orr, and Dr. Lin. A compact
-offline path is `go to Relay Chamber`, followed by
-`tell Technician Orr broadcast the distress packet`. With the OpenAI backend,
+and speak naturally to Director Sable, Technician Orr, and Dr. Lin. Orr's
+cooperation requires earned trust: the request may be refused in a fresh save.
+An offline regression path is `go to Relay Chamber`, `tell Orr thank you`,
+`tell Orr thanks`, then `tell Orr broadcast the distress packet`; this exercises
+the current simple relationship rules, rather than representing a preferred
+story solution. With the OpenAI backend,
 ask what each character knows before deciding whom to inform or encourage.
 The opening decision schedule leaves enough time to question multiple NPCs;
 ordinary information requests cannot authorize an irreversible interaction.

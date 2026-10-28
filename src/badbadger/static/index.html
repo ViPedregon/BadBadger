@@ -12,7 +12,19 @@
     <header><p class="eyebrow">BADBADGER</p><h1>Relay Crisis</h1><p>A station in trouble. Three conflicting plans. Your next move.</p></header>
     <p id="dialogue-mode"></p>
     <section id="status" aria-label="Current situation"></section>
+    <section class="guidance" aria-label="Your next move">
+      <p id="objective"></p><p id="phase"></p>
+      <details><summary>How mission time works</summary>
+        <p>Conversation: 1 minute. Examination: 2 minutes. Travel times appear below. Waiting spends the time you specify. NPCs can act independently as time advances.</p>
+        <p>Reading help, look, objective, people, journal, choices, summary, or timing costs no time. The game does not advance while this page is closed.</p>
+      </details>
+      <p>Choose a suggestion to fill the input, then Send. Requests to commit a plan are irreversible if accepted; questions do not authorize them.</p>
+      <div id="suggestions" class="controls" aria-label="Suggested commands"></div>
+      <div class="controls"><button type="button" data-command="journal">Journal</button><button type="button" data-command="help">Help</button><button type="button" data-command="people">People</button></div>
+    </section>
+    <section id="recap" aria-label="Chapter recap" hidden></section>
     <section id="transcript" aria-label="Story so far" tabindex="0"></section>
+    <div class="composer">
     <p id="notice" role="status">Opening your saved game…</p>
     <form id="command-form">
       <label for="command">What do you do?</label>
@@ -20,6 +32,7 @@
     </form>
     <div class="controls"><button id="refresh" type="button">Refresh saved game</button><button id="retry" type="button" hidden>Retry pending turn</button><button id="new-game" type="button" disabled>New game</button></div>
     <footer>Your progress is saved after each turn. Close this page and return to continue.</footer>
+    </div>
   </main>
 </body>
 </html>

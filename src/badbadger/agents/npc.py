@@ -246,6 +246,23 @@ class DeterministicNPCBackend:
                     )],
                 )
 
+        if any(word in lowered for word in ("know", "think", "risk", "priority", "plan", "why")):
+            active = [goal for goal in context.goals if goal.get("status", "active") == "active"]
+            lines = ["My priority is to " + active[0]["description"][0].lower()
+                     + active[0]["description"][1:]] if active else []
+            descriptions = {
+                ("sample", "is_unstable"): ("the sample is unstable", "the sample is stable"),
+                ("rescue", "is_listening"): ("rescue can hear us", "rescue is not listening"),
+                ("purge", "will_destroy_research"): ("purging will destroy the research", "purging will preserve the research"),
+            }
+            for belief in context.beliefs:
+                wording = descriptions.get((belief["subject_id"], belief["predicate"]))
+                if wording is not None and isinstance(belief["value"], bool):
+                    qualifier = "I believe" if belief["confidence"] >= 0.8 else "I'm not certain, but I think"
+                    lines.append(f"{qualifier} {wording[0 if belief['value'] else 1]}.")
+            if lines:
+                return NPCResponse(" ".join(lines))
+
         if any(word in lowered for word in ("hello", "hi", "talk", "speak")):
             return NPCResponse("Hello. What would you like to discuss?")
         return NPCResponse("I understand what you said, but I have nothing to add.")
