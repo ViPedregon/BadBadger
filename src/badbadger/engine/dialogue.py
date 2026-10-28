@@ -26,6 +26,15 @@ class DialogueService:
             return [f"{npc['name']} is not here."]
 
         context = self.context_builder.build(npc_id, player_input)
+        aftermath_question = bool(re.search(
+            r"\bwhy\b|\bwhat now\b|\bhow do you feel\b|\bwhat happened\b|\boutcome\b",
+            player_input, re.IGNORECASE,
+        ))
+        covered_cues = (
+            self.repository.pending_goal_reaction_ids(npc_id)
+            if aftermath_question and any(goal.get("status", "active") != "active" for goal in context.goals)
+            else []
+        )
         response = self.backend.respond(context, player_input)
         self._validate_response(response)
 
@@ -33,6 +42,9 @@ class DialogueService:
             self.repository.append_dialogue(npc_id, player["id"], player_input)
             self.repository.append_dialogue(npc_id, npc_id, response.dialogue)
             if not response.degraded:
+                # Only old recaps are covered: new outcomes during this exchange
+                # must still be eligible for reactions, as must other NPCs.
+                self.repository.cover_goal_reactions(npc_id, covered_cues)
                 event_messages=[]
                 proposal_results=[]
                 for proposal in response.proposed_actions:

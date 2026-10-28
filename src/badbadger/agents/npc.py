@@ -66,8 +66,18 @@ class DeterministicNPCBackend:
                 None,
             )
             if speech is not None:
+                utterance = f"Here's where things stand: {speech['summary']}"
+                if speech.get("trigger_kind") == "goal_resolved":
+                    goal = next((goal for goal in context.goals if goal.get("history")
+                                 and goal["history"][-1].get("reason") == speech["summary"]), None)
+                    if goal is not None:
+                        utterance = {
+                            "completed": "That is the outcome I hoped for.",
+                            "failed": "That is not the outcome I wanted.",
+                            "abandoned": "My original plan is no longer possible.",
+                        }.get(goal["status"], utterance)
                 return NPCResponse(
-                    f"Here's where things stand: {speech['summary']}",
+                    utterance,
                     proposed_actions=[ActionProposal(
                         "speak", {"cue_id": speech["cue_id"]}
                     )],

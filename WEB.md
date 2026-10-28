@@ -145,6 +145,14 @@ NPC responses use that NPC's filtered context. Neither interpreter can write
 canonical world state directly. Free-form AI prose can still be wrong or echo
 context; engine validation protects consequences, not every generated sentence.
 
+Direct aftermath questions (why, what now, feelings or outcomes) retire that
+NPC's already queued goal recaps after a successful reply, preventing a second
+automatic recap immediately after the answer. Other NPCs' cues and newly
+created outcomes remain available. Provider-failure replies do not consume
+those recaps. Retired cues remain in developer history; existing saved
+transcript entries are not rewritten. Remaining AI reactions are instructed
+to use first person rather than copy internal third-person cue summaries.
+
 Provider calls have explicit timeouts and no automatic SDK retries. Malformed
 structured responses retain the existing one-retry policy. The page and sample
 proxy allow longer requests for AI turns. If a response is lost, keep using the

@@ -897,6 +897,29 @@ class GameRepository:
             for row in rows
         ]
 
+    def pending_goal_reaction_ids(self, npc_id: str) -> list[int]:
+        return [int(row["id"]) for row in self.connection.execute(
+            "SELECT id FROM npc_reaction_cues WHERE npc_id=? "
+            "AND trigger_kind='goal_resolved' AND status='pending' AND expires_at>=?",
+            (npc_id, self.current_time),
+        )]
+
+    def cover_goal_reactions(self, npc_id: str, cue_ids: list[int]) -> None:
+        """Retire previously queued goal recaps covered by a direct conversation."""
+        covered = []
+        for cue_id in cue_ids:
+            cursor = self.connection.execute(
+                "UPDATE npc_reaction_cues SET status='expired' WHERE id=? AND npc_id=? "
+                "AND trigger_kind='goal_resolved' AND status='pending'",
+                (cue_id, npc_id),
+            )
+            if cursor.rowcount:
+                covered.append(cue_id)
+        if covered:
+            self.record("npc_reactions_covered", actor_id=npc_id,
+                        input_data={"cue_ids": covered},
+                        result_data={"reason": "Discussed the aftermath directly with the player."})
+
     def speak_reaction(
         self, npc_id: str, cue_id: int, utterance: str
     ) -> tuple[bool, str]:

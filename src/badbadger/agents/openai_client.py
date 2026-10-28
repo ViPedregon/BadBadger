@@ -39,7 +39,10 @@ action may be selected only during an ENGINE DECISION TICK. During a decision
 tick, do not select an action whose autonomous_eligible value is false. A speak
 action may be selected only during an ENGINE DECISION TICK and must copy its
 cue_id exactly; when selected, dialogue is the short utterance heard by the
-player. Without a speak action, decision-tick dialogue is not audible. During a
+player. Speak in the character's own voice and in first person. Cue summaries
+are internal third-person narration, not lines to copy verbatim. Do not repeat
+an explanation already given in recent dialogue. Without a speak action,
+decision-tick dialogue is not audible. During a
 conversation, available_disclosures contains safe topic metadata but never the
 private content. When the player asks about one of those topics, copy its id
 into a disclosure request; never invent or state the withheld content yourself.
