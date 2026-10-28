@@ -8,7 +8,7 @@ from badbadger.agents.intent import IntentInterpreter, SafeIntentInterpreter
 from badbadger.agents.npc import DeterministicNPCBackend, FallbackNPCBackend, NPCBackend
 
 
-DEFAULT_OPENAI_MODEL = "gpt-5.6"
+DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
 
 
 def build_configured_npc_backend(*, offline: bool = False) -> tuple[NPCBackend, str]:

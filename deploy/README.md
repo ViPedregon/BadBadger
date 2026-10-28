@@ -27,6 +27,10 @@ The root [render.yaml](../render.yaml) declares one paid Python service, one
 1 GB persistent disk, a generated web password and a generic health check.
 It disables automatic deploys so changes can be reviewed and backed up first.
 The runtime uses Render's `RENDER_EXTERNAL_URL` as its exact browser origin.
+Optional AI dialogue is enabled by adding `OPENAI_API_KEY` securely to the
+service environment after deploying the updated code. The pinned build includes
+the SDK; without a key it remains offline. See WEB.md for model configuration,
+usage charges and fallback behavior. Never reuse the game password as an API key.
 `requirements-web.txt` pins the runtime dependency versions exercised here;
 deliberately update those pins with the dependency declarations and rerun tests
 when upgrading. Development/browser-test tools are not installed on the host.

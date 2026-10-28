@@ -1,4 +1,4 @@
-"""Offline, player-facing Relay Crisis boundary for a future authenticated API.
+"""Player-facing Relay Crisis boundary with engine-validated AI proposals.
 
 Construct once at startup with a server-owned path. Each call owns its SQLite
 connection; BEGIN IMMEDIATE serializes turns even across service instances.
@@ -12,6 +12,7 @@ from importlib.resources import as_file, files
 from pathlib import Path
 
 from badbadger.application import GameApplication, open_prototype
+from badbadger.config import build_configured_intent_interpreter, build_configured_npc_backend
 from badbadger.db.repository import GameRepository
 from badbadger.engine.simulation import SimulationEngine
 
@@ -23,7 +24,9 @@ class TurnConflict(ValueError):
 class RelayService:
     """Persist complete turns, their public transcript, and replayable receipts."""
 
-    def __init__(self, database: str | Path) -> None:
+    def __init__(self, database: str | Path, *, offline: bool = True) -> None:
+        self.npc_backend, self.backend_label = build_configured_npc_backend(offline=offline)
+        self.intent_interpreter, self.intent_label = build_configured_intent_interpreter(offline=offline)
         self.database = Path(database)
         self.database.parent.mkdir(parents=True, exist_ok=True)
         resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
@@ -54,9 +57,12 @@ class RelayService:
         finally:
             app.repository.close()
 
-    @staticmethod
-    def _app(repository: GameRepository) -> GameApplication:
-        return GameApplication(SimulationEngine(repository), developer_mode=False)
+    def _app(self, repository: GameRepository) -> GameApplication:
+        return GameApplication(
+            SimulationEngine(repository), npc_backend=self.npc_backend,
+            backend_label=self.backend_label, intent_interpreter=self.intent_interpreter,
+            intent_label=self.intent_label, developer_mode=False,
+        )
 
     def view(self) -> dict:
         """Return only approved player output, never raw engine records."""
@@ -70,6 +76,7 @@ class RelayService:
                 ).fetchall()
                 return {
                     "revision": session["revision"],
+                    "dialogue_mode": "ai" if self.backend_label.startswith("OpenAI") else "offline",
                     "opening": json.loads(session["opening_json"]),
                     "status": self._app(repository).status(),
                     "transcript": [

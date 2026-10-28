@@ -1,8 +1,10 @@
 # Relay Crisis in a browser
 
 The browser app runs the existing Python game engine through `RelayService`.
-It is single-player, deterministic/offline, and makes no OpenAI calls, even if
-`OPENAI_API_KEY` is set. No engine rules live in JavaScript. The current cast is
+It is single-player and uses optional AI dialogue and unfamiliar-input
+interpretation when `OPENAI_API_KEY` is configured on the server. Without a key,
+or with `--offline`, it uses deterministic offline dialogue. No engine rules
+live in JavaScript. The current cast is
 Player, Director Sable, Technician Orr and Dr. Lin; future character authoring
 is separate.
 
@@ -12,7 +14,7 @@ Use Python 3.11 or newer. From the repository root:
 
 ```sh
 python -m venv .venv
-.venv/bin/python -m pip install -e '.[web]'
+.venv/bin/python -m pip install -e '.[web,openai]'
 ```
 
 Set `BADBADGER_WEB_PASSWORD` securely in the server's environment to a randomly
@@ -87,7 +89,7 @@ deployment is one Linux host with:
    the game. HTTPS is mandatory for transmitting HTTP Basic credentials remotely.
    For a wider audience, replace this with an identity-aware gateway and explicit
    per-user ownership before adding accounts. No provider API credentials are
-   needed for this offline milestone.
+   needed for offline play; optional AI setup is described below.
 4. Encrypted, versioned off-host backups and a restore drill. SQLite's online
    backup API can create a consistent snapshot while the app is running:
 
@@ -120,6 +122,40 @@ For a ready-to-review Render Blueprint, Linux service templates, and the
 the explicit `--host 0.0.0.0` container option requires an HTTPS origin.
 `BADBADGER_WEB_ORIGIN` takes precedence over Render's `RENDER_EXTERNAL_URL`.
 The public `/healthz` probe returns only a generic status, never game data.
+
+## Enable AI dialogue on Render
+
+Deploy the updated branch, then open the Render service's **Environment** page.
+Add `OPENAI_API_KEY` using your OpenAI project's API key. Enter the value securely
+in Render, never in chat, repository files, browser code or a URL. OpenAI usage
+is billed separately from hosting. The key is used only by the Python server.
+
+Optionally set `BADBADGER_OPENAI_MODEL` to a model your OpenAI project can use
+with Responses API structured outputs. The default is `gpt-4.1-mini`. Saving
+environment changes must restart/redeploy the service before they take effect.
+The Render build must install the updated pinned requirements and `[web,openai]`
+extras; a key alone does not update a previously deployed offline-only build.
+
+Existing saves and transcripts resume unchanged. The page indicates whether
+AI or offline dialogue is configured (this indicator does not verify that the
+provider accepted the key). Try a question addressed to a character
+who is present, such as `ask Director Sable why he favors containment`. Familiar
+commands still parse locally. Unfamiliar input can use the AI intent interpreter;
+NPC responses use that NPC's filtered context. Neither interpreter can write
+canonical world state directly. Free-form AI prose can still be wrong or echo
+context; engine validation protects consequences, not every generated sentence.
+
+Provider calls have explicit timeouts and no automatic SDK retries. Malformed
+structured responses retain the existing one-retry policy. The page and sample
+proxy allow longer requests for AI turns. If a response is lost, keep using the
+same pending request id. Committed retries do not make a second model call.
+An uncommitted failed/crashed turn can repeat provider work when retried, so
+database atomicity cannot guarantee exactly-once external API billing.
+
+If the provider rejects the key/model or times out, normal player output gives
+short recovery guidance and retains offline fallback. Check private Render logs
+for sanitized failure types. Remove the key or start with `--offline` to disable
+calls. Do not send key values or the game's HTTP Basic password for diagnostics.
 
 ## Validation
 

@@ -121,7 +121,7 @@ class OpenAIResponsesClient:
                     "OpenAI mode requires the optional dependencies. "
                     "Install with: python -m pip install -e '.[openai]'"
                 ) from error
-            sdk_client = OpenAI()
+            sdk_client = OpenAI(timeout=12.0, max_retries=0)
         self.sdk_client = sdk_client
         self.model = model
         self.response_model = response_model or _build_response_model()

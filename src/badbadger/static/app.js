@@ -28,7 +28,7 @@ function message(text, player = false) {
   transcript.append(p);
 }
 async function request(path, options = {}) {
-  const response = await fetch(path, { ...options, credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(20000) });
+  const response = await fetch(path, { ...options, credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(90000) });
   if (!response.ok) {
     const error = new Error(response.status === 401 ? "Sign in again, then refresh this page." : "The request could not be completed.");
     error.status = response.status;
@@ -39,6 +39,8 @@ async function request(path, options = {}) {
 async function load() {
   const view = await request("/api/game");
   revision = view.revision;
+  document.querySelector("#dialogue-mode").textContent = view.dialogue_mode === "ai"
+    ? "AI dialogue is configured." : "Offline dialogue: try the commands in help.";
   document.querySelector("#status").textContent = view.status.join("\n");
   transcript.replaceChildren();
   view.opening.forEach(text => message(text));

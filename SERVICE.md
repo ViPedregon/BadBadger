@@ -1,9 +1,12 @@
 # Relay Crisis service boundary
 
-`badbadger.service.RelayService` is the offline application boundary used by the
+`badbadger.service.RelayService` is the application boundary used by the
 authenticated web adapter in `badbadger.web` (see [WEB.md](WEB.md)). It uses
-the existing Python game engine and does not enable OpenAI, even when an API
-key exists in the environment.
+the existing Python game engine. Direct service construction defaults to offline
+for deterministic tests/tools. The web adapter passes `offline=False`, enabling
+the configured OpenAI backends only when `OPENAI_API_KEY` is present. The web
+CLI's `--offline` flag overrides a present key. Provider failures use the safe
+fallback, while all proposals still pass through engine validation.
 
 Construct it once at startup with a server-owned SQLite path:
 

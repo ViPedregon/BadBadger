@@ -54,7 +54,7 @@ class DeploymentTests(unittest.TestCase):
 
             def launch(save):
                 process = subprocess.Popen([
-                    sys.executable, "-m", "badbadger.web", "--save", str(save), "--port", str(backend),
+                    sys.executable, "-m", "badbadger.web", "--offline", "--save", str(save), "--port", str(backend),
                 ], env={**os.environ, "BADBADGER_WEB_PASSWORD": password, "BADBADGER_WEB_ORIGIN": origin},
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 processes.append(process)

@@ -19,7 +19,7 @@ class WebTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.password = "test-only-password-with-32-characters"
         self.origin = "http://127.0.0.1:8000"
-        self.app = create_app(Path(self.temp.name) / "save.db", self.password, self.origin)
+        self.app = create_app(Path(self.temp.name) / "save.db", self.password, self.origin, offline=True)
         self.client = self.enterContext(TestClient(self.app, base_url=self.origin, raise_server_exceptions=False))
         self.auth = ("victor", self.password)
         self.headers = {"Origin": self.origin, "X-BadBadger-Request": "turn"}

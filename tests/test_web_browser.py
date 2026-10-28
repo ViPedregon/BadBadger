@@ -48,7 +48,7 @@ class BrowserTests(unittest.TestCase):
 
     def start_server(self):
         self.process = subprocess.Popen(
-            [sys.executable, "-m", "badbadger.web", "--save", str(self.save), "--port", str(self.port)],
+            [sys.executable, "-m", "badbadger.web", "--offline", "--save", str(self.save), "--port", str(self.port)],
             env={**os.environ, "BADBADGER_WEB_PASSWORD": self.password, "BADBADGER_WEB_ORIGIN": self.origin},
             stdout=self.log, stderr=self.log,
         )

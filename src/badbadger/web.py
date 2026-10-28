@@ -1,4 +1,4 @@
-"""Single-player, offline HTTP adapter. Run behind HTTPS for remote access."""
+"""Single-player HTTP adapter. Run behind HTTPS for remote access."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ class RateLimit:
             entries.append(now)
 
 
-def create_app(database: str | Path, password: str, origin: str) -> FastAPI:
+def create_app(database: str | Path, password: str, origin: str, *, offline: bool = False) -> FastAPI:
     """Create one private game. These arguments are server configuration only."""
     parsed = urlsplit(origin)
     if (parsed.scheme not in {"https", "http"} or not parsed.hostname
@@ -71,7 +71,7 @@ def create_app(database: str | Path, password: str, origin: str) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app):
-        app.state.game = RelayService(database)
+        app.state.game = RelayService(database, offline=offline)
         yield
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -171,10 +171,11 @@ def create_app(database: str | Path, password: str, origin: str) -> FastAPI:
 
 def main():
     import uvicorn
-    parser = argparse.ArgumentParser(description="Run the private offline BadBadger browser application")
+    parser = argparse.ArgumentParser(description="Run the private BadBadger browser application")
     parser.add_argument("--save", type=Path, required=True, help="persistent server-owned SQLite save path")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="127.0.0.1", help="bind address; public/container binding requires an HTTPS origin")
+    parser.add_argument("--offline", action="store_true", help="disable AI calls even when an API key is configured")
     args = parser.parse_args()
     # New saves and SQLite sidecar files should be private on hosted instances.
     os.umask(0o077)
@@ -183,7 +184,7 @@ def main():
     try:
         if args.host not in {"127.0.0.1", "localhost", "::1"} and urlsplit(origin).scheme != "https":
             raise ValueError("A public/container bind requires an explicitly configured HTTPS origin")
-        app = create_app(args.save, password, origin)
+        app = create_app(args.save, password, origin, offline=args.offline)
     except ValueError as error:
         parser.error(str(error))
     # An HTTPS reverse proxy can forward to this loopback-only listener.

@@ -5,7 +5,7 @@ services:
     name: badbadger
     runtime: python
     plan: starter
-    buildCommand: pip install -r deploy/requirements-web.txt && pip install --no-deps '.[web]'
+    buildCommand: pip install -r deploy/requirements-web.txt && pip install --no-deps '.[web,openai]'
     startCommand: badbadger-web --save /var/data/badbadger/relay.db --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     autoDeployTrigger: "off"

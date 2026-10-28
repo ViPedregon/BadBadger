@@ -6,7 +6,8 @@ owns world state and validates every consequence.
 
 ## Browser application
 
-An offline, password-protected Relay Crisis browser application is available.
+A password-protected Relay Crisis browser application is available, with optional
+AI dialogue when a server-side OpenAI API key is configured.
 It saves every turn in SQLite and resumes the same game after closing the
 browser or restarting the server. See [WEB.md](WEB.md) for setup, authentication,
 testing, and the remaining remote hosting steps. The Python engine owns all
