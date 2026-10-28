@@ -45,6 +45,17 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.json(), {"status": "ok"})
         self.assertEqual(response.headers["cache-control"], "no-store")
 
+    def test_new_game_requires_auth_origin_confirmation_and_current_revision(self):
+        payload = {"request_id": "reset", "expected_revision": 0, "confirmed": True}
+        self.assertEqual(self.client.post("/api/new-game", json=payload, headers=self.headers).status_code, 401)
+        self.assertEqual(self.client.post("/api/new-game", json=payload, auth=self.auth).status_code, 403)
+        self.assertEqual(self.client.post("/api/new-game", json={**payload, "confirmed": False}, auth=self.auth, headers=self.headers).status_code, 400)
+        self.assertEqual(self.client.post("/api/new-game", json=payload, auth=self.auth, headers=self.headers).status_code, 200)
+        self.assertEqual(self.client.post("/api/new-game", json={**payload, "request_id": "stale"}, auth=self.auth, headers=self.headers).status_code, 409)
+        view = self.client.get("/api/game", auth=self.auth).json()
+        self.assertEqual(view["revision"], 1)
+        self.assertEqual(view["transcript"], [])
+
     def test_turn_retry_conflict_and_view(self):
         result = self.post("go to Relay Chamber")
         self.assertEqual(result.status_code, 200)

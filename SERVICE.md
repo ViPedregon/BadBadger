@@ -35,6 +35,17 @@ session-exit hint (`should_quit`). Quitting does not reset or end the mission.
 Every accepted submission, including a read command, increments the revision.
 To refresh without submitting a command, use `view()`.
 
+`new_game(request_id, expected_revision, confirmed=True)` archives the engine's
+tables and opening metadata, reseeds the bundled scenario, and updates the
+current transcript boundary in one transaction. Revisions continue increasing
+across playthroughs; old receipts are retained but old turns do not appear in
+the current view. Receipt operations distinguish turns from new-game requests.
+This prevents stale tabs or retried resets from mutating the wrong playthrough.
+Startup migrates existing web saves with default values that preserve their
+transcripts. Archives live in `playthrough_archives`, not a public download route;
+old receipts still reference the archived playthrough's turn range. There is no
+archive-restoration UI, and local archives do not replace off-site backups.
+
 The client should generate a request id once, retain it until it has received a
 response, and reuse it with the exact same command after a network timeout.
 A committed duplicate returns its original response, even if its expected

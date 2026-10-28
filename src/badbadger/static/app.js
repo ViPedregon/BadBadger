@@ -4,6 +4,7 @@ const input = document.querySelector("#command");
 const send = document.querySelector("#send");
 const refresh = document.querySelector("#refresh");
 const retry = document.querySelector("#retry");
+const newGame = document.querySelector("#new-game");
 const notice = document.querySelector("#notice");
 const transcript = document.querySelector("#transcript");
 const pendingKey = "badbadger.pending-turn.v1";
@@ -20,6 +21,8 @@ function controls() {
   refresh.disabled = busy;
   retry.hidden = pending === null;
   retry.disabled = busy;
+  retry.textContent = pending && pending.operation === "new-game" ? "Retry new game" : "Retry pending turn";
+  newGame.disabled = input.disabled;
 }
 function message(text, player = false) {
   const p = document.createElement("p");
@@ -59,25 +62,29 @@ async function submitPending() {
   busy = true;
   controls();
   notice.textContent = "Working…";
+  const startingNewGame = pending.operation === "new-game";
+  const { operation, ...payload } = pending;
   try {
-    await request("/api/turn", {
+    await request(startingNewGame ? "/api/new-game" : "/api/turn", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-BadBadger-Request": "turn" },
-      body: JSON.stringify(pending),
+      body: JSON.stringify(payload),
     });
     clearPending();
     input.value = "";
     await load();
-    notice.textContent = "Saved.";
+    notice.textContent = startingNewGame ? "New game started. Your previous playthrough is archived." : "Saved.";
   } catch (error) {
     if ([400, 409, 413, 422].includes(error.status)) {
-      input.value = pending ? pending.command : input.value;
+      input.value = pending ? (pending.command || "") : input.value;
       clearPending();
-      notice.textContent = "Your turn was not submitted. Refresh the saved game, review it, then send again.";
+      notice.textContent = startingNewGame
+        ? "The game changed. Review the saved game before starting over."
+        : "Your turn was not submitted. Refresh the saved game, review it, then send again.";
       try { await load(); } catch (_) { /* The manual refresh remains available. */ }
     } else {
       notice.textContent = pending
-        ? "Connection interrupted. Retry the pending turn; it will not run twice."
+        ? "Connection interrupted. Retry the pending request; it will not run twice."
         : "Your turn was saved. Refresh to load the latest story.";
     }
   } finally {
@@ -86,19 +93,26 @@ async function submitPending() {
     if (!input.disabled) input.focus();
   }
 }
-form.addEventListener("submit", event => {
-  event.preventDefault();
-  if (busy || pending || revision === null || !input.value.trim()) return;
-  const turn = { request_id: crypto.randomUUID(), command: input.value, expected_revision: revision };
-  try { localStorage.setItem(pendingKey, JSON.stringify(turn)); }
+function persistAndSubmit(payload) {
+  try { localStorage.setItem(pendingKey, JSON.stringify(payload)); }
   catch (_) {
     storageAvailable = false;
     notice.textContent = "Allow browser storage for this site to submit turns safely.";
     controls();
     return;
   }
-  pending = turn;
+  pending = payload;
   submitPending();
+}
+form.addEventListener("submit", event => {
+  event.preventDefault();
+  if (busy || pending || revision === null || !input.value.trim()) return;
+  persistAndSubmit({ request_id: crypto.randomUUID(), command: input.value, expected_revision: revision });
+});
+newGame.addEventListener("click", () => {
+  if (busy || pending || revision === null || !storageAvailable) return;
+  if (!window.confirm("Start a new Relay Crisis game? Your current playthrough will be archived on the server. The new game begins at the start of the crisis.")) return;
+  persistAndSubmit({ operation: "new-game", request_id: crypto.randomUUID(), expected_revision: revision, confirmed: true });
 });
 retry.addEventListener("click", submitPending);
 refresh.addEventListener("click", async () => {

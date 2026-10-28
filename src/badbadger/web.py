@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from badbadger.service import RelayService, TurnConflict
 
@@ -31,6 +31,13 @@ class TurnRequest(BaseModel):
     request_id: str = Field(min_length=1, max_length=128)
     command: str = Field(min_length=1, max_length=2000)
     expected_revision: StrictInt = Field(ge=0)
+
+
+class NewGameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    request_id: str = Field(min_length=1, max_length=128)
+    expected_revision: StrictInt = Field(ge=0)
+    confirmed: StrictBool
 
 
 class RateLimit:
@@ -165,6 +172,18 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
             raise HTTPException(400, str(error)) from None
         except sqlite3.OperationalError:
             raise HTTPException(503, "Save is busy. Retry the same submission.", headers={"Retry-After": "1"}) from None
+
+    @app.post("/api/new-game", dependencies=[Depends(authenticated)])
+    def new_game(payload: NewGameRequest, request: Request):
+        limiter.check("turns", 60)
+        try:
+            return request.app.state.game.new_game(payload.request_id, payload.expected_revision, confirmed=payload.confirmed)
+        except TurnConflict as error:
+            raise HTTPException(409, str(error)) from None
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from None
+        except sqlite3.OperationalError:
+            raise HTTPException(503, "Save is busy. Retry the same request.", headers={"Retry-After": "1"}) from None
 
     return app
 

@@ -46,9 +46,18 @@ The page shows current surroundings, the saved story and a text input. Try
 `look`, `choices`, `journal`, or `help`. Each successful submission is committed
 before it is shown as saved. Close the page and reopen it to resume; the save
 also survives a server restart when the same database path is used. Game time
-does not advance while the page is closed. There is no reset button and no
-developer inspector. `summary` currently returns public status rather than
+does not advance while the page is closed. **New game** asks for confirmation,
+archives the current playthrough on the server, and starts Relay Crisis at minute
+zero. There is no developer inspector. `summary` returns public status rather than
 private NPC goal outcomes.
+
+New games keep the same login and AI configuration. The current page shows only
+the new playthrough's transcript; old engine state and turn history remain in
+the same SQLite save. There is no archive browser or restore button yet. Archives
+are private server records and grow with use; they are not off-site backups.
+Back up the database before deploying this schema update or doing recovery work.
+If a new-game response is lost, use **Retry new game** to confirm the original
+request rather than starting over again. Other tabs must refresh before playing.
 
 Use a fresh browser save rather than the baseline playthrough saves, which
 have already ended. Do not run the CLI against the web save while the service

@@ -116,6 +116,29 @@ class BrowserTests(unittest.TestCase):
         expect(self.page.locator(".player")).to_have_count(1)
         expect(self.page.locator("#status")).to_contain_text("Mission time: 1 minutes.")
 
+    def test_new_game_cancel_confirm_and_lost_response_recovery(self):
+        self.command("go to Relay Chamber")
+        self.page.once("dialog", lambda dialog: dialog.dismiss())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator(".player")).to_have_count(1)
+        expect(self.page.locator("#status")).to_contain_text("Relay Chamber")
+
+        def lose_response(route):
+            route.fetch()
+            route.abort("failed")
+        self.page.route("**/api/new-game", lose_response)
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator("#notice")).to_contain_text("Connection interrupted")
+        self.page.unroute("**/api/new-game")
+        self.page.reload()
+        expect(self.page.locator("#retry")).to_have_text("Retry new game")
+        self.page.locator("#retry").click()
+        expect(self.page.locator("#notice")).to_contain_text("New game started")
+        expect(self.page.locator(".player")).to_have_count(0)
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 0 minutes.")
+        self.command("wait 1")
+
     def test_two_tabs_stale_turn_and_text_is_not_html(self):
         other = self.context.new_page()
         other.goto(self.origin)

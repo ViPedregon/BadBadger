@@ -8,6 +8,7 @@ No network listener, authentication, or client-controlled save paths live here.
 from __future__ import annotations
 
 import json
+import tempfile
 from importlib.resources import as_file, files
 from pathlib import Path
 
@@ -48,10 +49,21 @@ class RelayService:
                     revision INTEGER PRIMARY KEY, request_id TEXT NOT NULL UNIQUE,
                     command TEXT NOT NULL, response_json TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS playthrough_archives (
+                    end_revision INTEGER PRIMARY KEY,
+                    saved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    state_json TEXT NOT NULL
+                );
             """)
+            columns = {row["name"] for row in repository.connection.execute("PRAGMA table_info(player_session)")}
+            if "game_start_revision" not in columns:
+                repository.connection.execute("ALTER TABLE player_session ADD COLUMN game_start_revision INTEGER NOT NULL DEFAULT 0")
+            columns = {row["name"] for row in repository.connection.execute("PRAGMA table_info(player_turns)")}
+            if "operation" not in columns:
+                repository.connection.execute("ALTER TABLE player_turns ADD COLUMN operation TEXT NOT NULL DEFAULT 'turn'")
             with repository.transaction():
                 repository.connection.execute(
-                    "INSERT OR IGNORE INTO player_session VALUES (1, 0, ?)",
+                    "INSERT OR IGNORE INTO player_session(id,revision,opening_json) VALUES (1, 0, ?)",
                     (json.dumps(app.introduction()),),
                 )
         finally:
@@ -72,7 +84,8 @@ class RelayService:
                     "SELECT * FROM player_session WHERE id=1"
                 ).fetchone()
                 turns = repository.connection.execute(
-                    "SELECT command, response_json FROM player_turns ORDER BY revision"
+                    "SELECT command, response_json FROM player_turns WHERE revision>? ORDER BY revision",
+                    (session["game_start_revision"],),
                 ).fetchall()
                 return {
                     "revision": session["revision"],
@@ -97,11 +110,11 @@ class RelayService:
         with GameRepository(self.database) as repository:
             with repository.transaction():
                 receipt = repository.connection.execute(
-                    "SELECT command, response_json FROM player_turns WHERE request_id=?",
+                    "SELECT command, response_json, operation FROM player_turns WHERE request_id=?",
                     (request_id,),
                 ).fetchone()
                 if receipt:
-                    if receipt["command"] != command:
+                    if receipt["operation"] != "turn" or receipt["command"] != command:
                         raise TurnConflict("Request id already used for another command")
                     return json.loads(receipt["response_json"])
                 revision = repository.connection.execute(
@@ -124,10 +137,75 @@ class RelayService:
                     "status": app.status(),
                 }
                 repository.connection.execute(
-                    "INSERT INTO player_turns VALUES (?, ?, ?, ?)",
+                    "INSERT INTO player_turns(revision,request_id,command,response_json) VALUES (?, ?, ?, ?)",
                     (revision + 1, request_id, command, json.dumps(response)),
                 )
                 repository.connection.execute(
                     "UPDATE player_session SET revision=? WHERE id=1", (revision + 1,)
+                )
+                return response
+
+    def new_game(self, request_id: str, expected_revision: int, *, confirmed: bool = False) -> dict:
+        """Archive the old engine state and reseed in one serialized transaction.
+
+        Revisions never reset, so old browser tabs cannot submit to the new game.
+        Receipts are retained across playthroughs so a retried reset is harmless.
+        """
+        if confirmed is not True:
+            raise ValueError("Confirm starting a new game first")
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise ValueError("Request id must contain 1 to 128 characters")
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("Revision must be a nonnegative integer")
+        with GameRepository(self.database) as repository:
+            with repository.transaction():
+                receipt = repository.connection.execute(
+                    "SELECT operation,response_json FROM player_turns WHERE request_id=?", (request_id,),
+                ).fetchone()
+                if receipt:
+                    if receipt["operation"] != "new-game":
+                        raise TurnConflict("Request id already used for another command")
+                    return json.loads(receipt["response_json"])
+                session = repository.connection.execute("SELECT * FROM player_session WHERE id=1").fetchone()
+                if session["revision"] != expected_revision:
+                    raise TurnConflict("Game changed; refresh before starting a new game")
+                resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+                with tempfile.TemporaryDirectory(prefix="badbadger-new-") as directory:
+                    with as_file(resource) as scenario:
+                        fresh = open_prototype(Path(directory) / "fresh.db", scenario=scenario, developer_mode=False)
+                    try:
+                        tables = [row["name"] for row in fresh.repository.connection.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                        )]
+                        # Names come only from the bundled engine schema, never a client.
+                        def quoted(name):
+                            return '"' + name.replace('"', '""') + '"'
+                        old = {table: [dict(row) for row in repository.connection.execute(f"SELECT * FROM {quoted(table)}")]
+                               for table in tables}
+                        archive = {"tables": old, "opening": json.loads(session["opening_json"]),
+                                   "start_revision": session["game_start_revision"], "end_revision": expected_revision}
+                        repository.connection.execute("INSERT INTO playthrough_archives(end_revision,state_json) VALUES (?,?)",
+                                                      (expected_revision, json.dumps(archive)))
+                        repository.connection.execute("PRAGMA defer_foreign_keys=ON")
+                        for table in tables:
+                            repository.connection.execute(f"DELETE FROM {quoted(table)}")
+                        for table in tables:
+                            for row in fresh.repository.connection.execute(f"SELECT * FROM {quoted(table)}"):
+                                columns = ','.join(quoted(column) for column in row.keys())
+                                placeholders = ','.join('?' for _ in row.keys())
+                                repository.connection.execute(f"INSERT INTO {quoted(table)} ({columns}) VALUES ({placeholders})", tuple(row))
+                        opening = fresh.introduction()
+                    finally:
+                        fresh.repository.close()
+                revision = expected_revision + 1
+                response = {"revision": revision, "messages": ["New Relay Crisis game started."],
+                            "should_quit": False, "status": self._app(repository).status()}
+                repository.connection.execute(
+                    "UPDATE player_session SET revision=?,game_start_revision=?,opening_json=? WHERE id=1",
+                    (revision, revision, json.dumps(opening)),
+                )
+                repository.connection.execute(
+                    "INSERT INTO player_turns(revision,request_id,command,response_json,operation) VALUES (?,?,?,?,'new-game')",
+                    (revision, request_id, "New game", json.dumps(response)),
                 )
                 return response
