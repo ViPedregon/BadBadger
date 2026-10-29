@@ -1,4 +1,4 @@
-"""Player-facing Relay Crisis boundary with engine-validated AI proposals.
+"""Player-facing chapter boundary with engine-validated AI proposals.
 
 Construct once at startup with a server-owned path. Each call owns its SQLite
 connection; BEGIN IMMEDIATE serializes turns even across service instances.
@@ -16,6 +16,7 @@ from badbadger.application import GameApplication, open_prototype
 from badbadger.config import build_configured_intent_interpreter, build_configured_npc_backend
 from badbadger.db.repository import GameRepository
 from badbadger.engine.simulation import SimulationEngine
+from badbadger.scenarios.catalog import CHAPTERS, chapter, chapter_key
 
 
 class TurnConflict(ValueError):
@@ -25,20 +26,18 @@ class TurnConflict(ValueError):
 class RelayService:
     """Persist complete turns, their public transcript, and replayable receipts."""
 
-    def __init__(self, database: str | Path, *, offline: bool = True) -> None:
+    def __init__(self, database: str | Path, *, offline: bool = True, scenario: str = "relay_crisis") -> None:
+        selected = chapter(scenario)
         self.npc_backend, self.backend_label = build_configured_npc_backend(offline=offline)
         self.intent_interpreter, self.intent_label = build_configured_intent_interpreter(offline=offline)
         self.database = Path(database)
         self.database.parent.mkdir(parents=True, exist_ok=True)
-        resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+        resource = files("badbadger.scenarios").joinpath(selected["file"])
         with as_file(resource) as scenario:
             app = open_prototype(self.database, scenario=scenario, developer_mode=False)
         try:
             repository = app.repository
-            with as_file(resource) as scenario:
-                expected = json.loads(scenario.read_text())["scenario_id"]
-            if repository.scenario_id != expected:
-                raise ValueError("This service requires a Relay Crisis save")
+            chapter_key(repository.scenario_id)
             # Run only at startup, never during an application turn.
             repository.connection.executescript("""
                 CREATE TABLE IF NOT EXISTS player_session (
@@ -88,6 +87,10 @@ class RelayService:
                     (session["game_start_revision"],),
                 ).fetchall()
                 return {
+                    "scenario": {"key": chapter_key(repository.scenario_id),
+                                 **{key: chapter(chapter_key(repository.scenario_id))[key] for key in ("title", "tagline")}},
+                    "chapters": [{"key": key, "title": value["title"] + (" (prototype)" if key == "relay_crisis" else "")}
+                                 for key, value in CHAPTERS.items()],
                     "revision": session["revision"],
                     "dialogue_mode": "ai" if self.backend_label.startswith("OpenAI") else "offline",
                     "guidance": self._app(repository).player_guidance(),
@@ -147,7 +150,7 @@ class RelayService:
                 )
                 return response
 
-    def new_game(self, request_id: str, expected_revision: int, *, confirmed: bool = False) -> dict:
+    def new_game(self, request_id: str, expected_revision: int, *, confirmed: bool = False, scenario: str | None = None) -> dict:
         """Archive the old engine state and reseed in one serialized transaction.
 
         Revisions never reset, so old browser tabs cannot submit to the new game.
@@ -159,6 +162,8 @@ class RelayService:
             raise ValueError("Request id must contain 1 to 128 characters")
         if type(expected_revision) is not int or expected_revision < 0:
             raise ValueError("Revision must be a nonnegative integer")
+        if scenario is not None:
+            chapter(scenario)
         with GameRepository(self.database) as repository:
             with repository.transaction():
                 receipt = repository.connection.execute(
@@ -167,11 +172,16 @@ class RelayService:
                 if receipt:
                     if receipt["operation"] != "new-game":
                         raise TurnConflict("Request id already used for another command")
-                    return json.loads(receipt["response_json"])
+                    previous = json.loads(receipt["response_json"])
+                    if scenario is not None and previous.get("scenario") != scenario:
+                        raise TurnConflict("Request id already used for another chapter")
+                    return previous
                 session = repository.connection.execute("SELECT * FROM player_session WHERE id=1").fetchone()
                 if session["revision"] != expected_revision:
                     raise TurnConflict("Game changed; refresh before starting a new game")
-                resource = files("badbadger.scenarios").joinpath("relay_crisis.json")
+                selected_key = scenario or chapter_key(repository.scenario_id)
+                selected = chapter(selected_key)
+                resource = files("badbadger.scenarios").joinpath(selected["file"])
                 with tempfile.TemporaryDirectory(prefix="badbadger-new-") as directory:
                     with as_file(resource) as scenario:
                         fresh = open_prototype(Path(directory) / "fresh.db", scenario=scenario, developer_mode=False)
@@ -184,7 +194,7 @@ class RelayService:
                             return '"' + name.replace('"', '""') + '"'
                         old = {table: [dict(row) for row in repository.connection.execute(f"SELECT * FROM {quoted(table)}")]
                                for table in tables}
-                        archive = {"tables": old, "opening": json.loads(session["opening_json"]),
+                        archive = {"tables": old, "scenario_id": repository.scenario_id, "opening": json.loads(session["opening_json"]),
                                    "start_revision": session["game_start_revision"], "end_revision": expected_revision}
                         repository.connection.execute("INSERT INTO playthrough_archives(end_revision,state_json) VALUES (?,?)",
                                                       (expected_revision, json.dumps(archive)))
@@ -200,7 +210,7 @@ class RelayService:
                     finally:
                         fresh.repository.close()
                 revision = expected_revision + 1
-                response = {"revision": revision, "messages": ["New Relay Crisis game started."],
+                response = {"revision": revision, "scenario": selected_key, "messages": [f"New {selected['title']} game started."],
                             "should_quit": False, "status": self._app(repository).status()}
                 repository.connection.execute(
                     "UPDATE player_session SET revision=?,game_start_revision=?,opening_json=? WHERE id=1",

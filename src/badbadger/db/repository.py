@@ -676,6 +676,8 @@ class GameRepository:
             return False, "That information requires an authorized disclosure."
         speaker = self.get_character(speaker_id)
         target = self.get_character(target_id)
+        if self.pending_activity(speaker_id) is not None or self.pending_activity(target_id) is not None:
+            return False, "The social target is unavailable."
         if (
             speaker is None
             or target is None
@@ -1055,6 +1057,10 @@ class GameRepository:
             return
         for npc in self.characters_at(location_id, kind="npc"):
             if npc["id"] == character_id:
+                continue
+            if (actor["kind"] == "npc" and self.npc_parameters(character_id).get("follow_player") is True
+                    and self.npc_parameters(npc["id"]).get("follow_player") is True):
+                # Companions arriving together need no surprised-arrival recap.
                 continue
             self.queue_reaction(
                 npc["id"], "character_arrived",
@@ -1522,7 +1528,8 @@ class GameRepository:
     def characters_at(
         self, location_id: str, *, kind: str | None = None
     ) -> list[dict[str, Any]]:
-        sql = "SELECT * FROM characters WHERE location_id = ? AND active = 1"
+        sql = ("SELECT * FROM characters WHERE location_id = ? AND active = 1 "
+               "AND NOT EXISTS (SELECT 1 FROM character_activities a WHERE a.character_id=characters.id AND a.status='pending')")
         parameters: list[Any] = [location_id]
         if kind is not None:
             sql += " AND kind = ?"
@@ -1586,10 +1593,28 @@ class GameRepository:
 
     def examinable_subject_ids(self) -> list[str]:
         rows = self.connection.execute(
-            "SELECT subject_id FROM facts "
-            "WHERE predicate = 'description' AND hidden = 0 ORDER BY subject_id"
+            "SELECT f.subject_id FROM facts f LEFT JOIN examination_sites s ON s.subject_id=f.subject_id "
+            "WHERE f.predicate = 'description' AND f.hidden = 0 "
+            "AND (s.location_id IS NULL OR s.location_id=?) ORDER BY f.subject_id",
+            (self.get_player()["location_id"],),
         ).fetchall()
         return [str(row["subject_id"]) for row in rows]
+
+    def add_examination(self, subject_id: str, location_id: str, description: str, beliefs: list[dict]) -> None:
+        self.set_fact(subject_id, "description", description)
+        self.connection.execute("INSERT INTO examination_sites VALUES (?,?,?)",
+                                (subject_id, location_id, json.dumps(beliefs)))
+
+    def observe_examination(self, subject_id: str) -> None:
+        site = self.connection.execute("SELECT * FROM examination_sites WHERE subject_id=?", (subject_id,)).fetchone()
+        if site is None:
+            return
+        for witness in self.characters_at(site["location_id"]):
+            for belief in json.loads(site["beliefs_json"]):
+                self.set_belief(witness["id"], belief["subject_id"], belief["predicate"], belief["value"],
+                                belief.get("confidence", 1.0), source_type="direct", detail=f"Examined {subject_id} firsthand.")
+            self.add_memory(witness["id"], site["location_id"], "direct_observation",
+                            str(self.get_fact(subject_id, "description")), salience=.8, subject_id=subject_id)
 
     def move_character(self, character_id: str, location_id: str) -> None:
         cursor = self.connection.execute(

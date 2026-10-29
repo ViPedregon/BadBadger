@@ -12,7 +12,7 @@ class IdentityError(ValueError):
 
 
 MISSION_PARAMETERS = {"autonomy_enabled", "first_decision_after_minutes",
-                      "decision_cooldown_minutes", "proactive_speech_cooldown_minutes"}
+                      "decision_cooldown_minutes", "proactive_speech_cooldown_minutes", "follow_player"}
 
 
 def load_identity(path: Path, root: Path, *, allow_unapproved: bool = False) -> dict:

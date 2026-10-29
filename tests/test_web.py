@@ -56,6 +56,20 @@ class WebTests(unittest.TestCase):
         self.assertEqual(view["revision"], 1)
         self.assertEqual(view["transcript"], [])
 
+    def test_chapter_selection_uses_allowlisted_keys_and_preserves_old_game(self):
+        payload = {"request_id": "new-chapter", "expected_revision": 0, "confirmed": True, "scenario": "../../private.db"}
+        response = self.client.post("/api/new-game", json=payload, auth=self.auth, headers=self.headers)
+        self.assertEqual(response.status_code, 422)
+        payload["scenario"] = "blackbarrow"
+        response = self.client.post("/api/new-game", json=payload, auth=self.auth, headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.post("/api/new-game", json=payload, auth=self.auth, headers=self.headers).json(), response.json())
+        view = self.client.get("/api/game", auth=self.auth).json()
+        self.assertEqual(view["scenario"]["key"], "blackbarrow")
+        self.assertEqual(view["player"]["name"], "Victor Gravenholt")
+        self.assertEqual(view["transcript"], [])
+        self.assertEqual(self.client.get("/assets/blackbarrow_north_road.json", auth=self.auth).status_code, 404)
+
     def test_turn_retry_conflict_and_view(self):
         result = self.post("go to Relay Chamber")
         self.assertEqual(result.status_code, 200)

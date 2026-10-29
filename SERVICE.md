@@ -1,7 +1,8 @@
-# Relay Crisis service boundary
+# BadBadger chapter service boundary
 
 `badbadger.service.RelayService` is the application boundary used by the
-authenticated web adapter in `badbadger.web` (see [WEB.md](WEB.md)). It uses
+authenticated web adapter in `badbadger.web` (see [WEB.md](WEB.md)). Its historical
+class name is retained for compatibility; it supports both catalog chapters. It uses
 the existing Python game engine. Direct service construction defaults to offline
 for deterministic tests/tools. The web adapter passes `offline=False`, enabling
 the configured OpenAI backends only when `OPENAI_API_KEY` is present. The web
@@ -24,10 +25,16 @@ result = game.submit(
 
 Reconstructing the service with that same path resumes the save and transcript.
 Do not run its initializer during active gameplay. A pre-existing Relay Crisis
-save can be opened, but its old CLI transcript cannot be recovered safely from
+or Blackbarrow save can be opened, but its old CLI transcript cannot be recovered safely from
 private engine history; only submissions made through this service appear in
 the new transcript. Do not alternate CLI writes with service play: CLI writes
 do not update service revisions or receipts.
+
+For a fresh Blackbarrow save, use `RelayService(path, scenario="blackbarrow")`.
+The direct Python API retains its Relay Crisis default for compatibility; the
+web command defaults to Blackbarrow. Both always resume an existing supported
+save without changing its chapter. New-game requests may select only registered
+chapter keys; filenames and arbitrary scenario paths are not accepted.
 
 `view()` returns an opening, current public status, revision, and persisted
 player-facing transcript. `submit()` returns messages, status, revision, and a
@@ -35,7 +42,7 @@ session-exit hint (`should_quit`). Quitting does not reset or end the mission.
 Every accepted submission, including a read command, increments the revision.
 To refresh without submitting a command, use `view()`.
 
-`new_game(request_id, expected_revision, confirmed=True)` archives the engine's
+`new_game(request_id, expected_revision, confirmed=True, scenario=None)` archives the engine's
 tables and opening metadata, reseeds the bundled scenario, and updates the
 current transcript boundary in one transaction. Revisions continue increasing
 across playthroughs; old receipts are retained but old turns do not appear in
@@ -72,8 +79,11 @@ public recap; the browser contains no rules for resolving them. Public outcome
 memories are created only by validated actions while the player is present.
 Hidden description facts are
 excluded from the application's examinable targets. This is not a general
-scenario visibility redesign: public descriptions remain globally examinable,
-as before. Relay Crisis's authored situation table is the current target.
+scenario visibility redesign: legacy descriptions remain globally examinable.
+New `examinations` definitions bind observations to a location; both intent context
+and the engine enforce that scope. Successful examination records direct beliefs
+and memories only for characters actually present. AI proposals cannot write
+examination definitions or select arbitrary chapter files.
 
 Run the complete test suite from the repository root:
 

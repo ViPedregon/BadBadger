@@ -5,6 +5,8 @@ const send = document.querySelector("#send");
 const refresh = document.querySelector("#refresh");
 const retry = document.querySelector("#retry");
 const newGame = document.querySelector("#new-game");
+const chapterSelection = document.querySelector("#chapter-selection");
+let loadedScenario = null;
 const notice = document.querySelector("#notice");
 const transcript = document.querySelector("#transcript");
 const pendingKey = "badbadger.pending-turn.v1";
@@ -23,6 +25,7 @@ function controls() {
   retry.disabled = busy;
   retry.textContent = pending && pending.operation === "new-game" ? "Retry new game" : "Retry pending turn";
   newGame.disabled = input.disabled;
+  chapterSelection.disabled = input.disabled;
   document.querySelectorAll("[data-command]").forEach(button => { button.disabled = input.disabled; });
 }
 function message(text, player = false) {
@@ -43,6 +46,22 @@ async function request(path, options = {}) {
 async function load() {
   const view = await request("/api/game");
   revision = view.revision;
+  if (view.scenario) {
+    document.title = `BadBadger · ${view.scenario.title}`;
+    document.querySelector("h1").textContent = view.scenario.title;
+    document.querySelector("header p:last-child").textContent = view.scenario.tagline;
+    if (loadedScenario !== view.scenario.key) {
+      chapterSelection.replaceChildren();
+      view.chapters.forEach(chapter => {
+        const option = document.createElement("option");
+        option.value = chapter.key;
+        option.textContent = chapter.title;
+        chapterSelection.append(option);
+      });
+      chapterSelection.value = view.scenario.key;
+      loadedScenario = view.scenario.key;
+    }
+  }
   document.querySelector("#dialogue-mode").textContent = view.dialogue_mode === "ai"
     ? "AI dialogue is configured." : "Offline dialogue: try the commands in help.";
   document.querySelector("#status").textContent = view.status.join("\n");
@@ -132,8 +151,9 @@ form.addEventListener("submit", event => {
 });
 newGame.addEventListener("click", () => {
   if (busy || pending || revision === null || !storageAvailable) return;
-  if (!window.confirm("Start a new Relay Crisis game? Your current playthrough will be archived on the server. The new game begins at the start of the crisis.")) return;
-  persistAndSubmit({ operation: "new-game", request_id: crypto.randomUUID(), expected_revision: revision, confirmed: true });
+  const title = chapterSelection.selectedOptions[0].textContent;
+  if (!window.confirm(`Start a new ${title} game? Your current playthrough will be archived on the server. The new game begins at the start of the chapter.`)) return;
+  persistAndSubmit({ operation: "new-game", request_id: crypto.randomUUID(), expected_revision: revision, confirmed: true, scenario: chapterSelection.value });
 });
 document.addEventListener("click", event => {
   const button = event.target.closest("button[data-command]");

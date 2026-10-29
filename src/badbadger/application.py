@@ -22,10 +22,10 @@ from badbadger.scenarios.loader import load_scenario
 
 HELP_TEXT = """You can type naturally. Useful examples:
   look                         describe your surroundings
-  go to Relay Chamber          travel to a connected location
-  ask Technician Orr what he knows
-  tell Dr. Lin about the rescue signal
-  examine situation table      inspect something important
+  go to <place>                travel to a connected location
+  ask <name> what they know    question someone present
+  tell <name> <request>        explicitly request cooperation
+  examine <subject>            inspect something nearby
   wait 2 minutes               let events unfold
   objective                    review your immediate purpose
   journal                      review facts and events you have learned
@@ -89,9 +89,12 @@ class GameApplication:
         objective = presentation.get(
             "objective", "Explore, speak with the people present, and decide what to do."
         )
-        hints = (["Start with 'examine situation table', then question the people here. "
-                  "There is no single safe choice: each plan sacrifices something."]
-                 if self.repository.scenario_id == "relay-crisis-0.1" else [])
+        hints = []
+        if presentation.get("starting_hint"):
+            hints.append(presentation["starting_hint"])
+        elif self.repository.scenario_id == "relay-crisis-0.1":
+            hints.append("Start with 'examine situation table', then question the people here. "
+                         "There is no single safe choice: each plan sacrifices something.")
         return [f"=== {title} ===", intro, f"Objective: {objective}", *hints, *self.timing(), *self.status()]
 
     @staticmethod
@@ -108,24 +111,33 @@ class GameApplication:
                     {"command": "journal", "label": "Read your journal", "consequential": False}]
         aftermath = bool(self.repository.player_consequences())
         suggestions = []
-        if not aftermath and "situation_table" in self.repository.examinable_subject_ids():
-            suggestions.append({"command": "examine situation table", "label": "Examine situation table · 2 min", "consequential": False})
+        if not aftermath:
+            for subject in self.repository.examinable_subject_ids():
+                suggestions.append({"command": "examine " + subject.replace("_", " "),
+                                    "label": "Examine " + subject.replace("_", " ") + " · 2 min", "consequential": False})
+        presentation = self.repository.scenario_presentation()
+        public_actions = set(presentation.get("public_action_ids", []))
         for npc in self.repository.characters_at(player["location_id"], kind="npc"):
             question = "what now" if aftermath else "what they know"
             suggestions.append({"command": f"ask {npc['name']} {question}",
                                 "label": f"Ask {npc['name']} · 1 min", "consequential": False})
             # Relay Crisis publicly introduces these three plans. Never expose
             # arbitrary scenario actions, scores, preconditions or private goals.
-            if self.repository.scenario_id == "relay-crisis-0.1" and not aftermath:
+            if not aftermath:
                 for action in self.repository.available_npc_actions(npc["id"]):
-                    suggestions.append({"command": f"tell {npc['name']} {action['label'].lower()}",
-                                        "label": f"Request: {action['label']} · irreversible if accepted",
-                                        "consequential": True})
+                    if self.repository.scenario_id == "relay-crisis-0.1" or action["id"] in public_actions:
+                        suggestions.append({"command": f"tell {npc['name']} {action['label'].lower()}",
+                                            "label": f"Request: {action['label']} · irreversible if accepted",
+                                            "consequential": True})
         for location in self.repository.reachable_locations(player["location_id"]):
             suggestions.append({"command": f"go to {location['name']}",
                                 "label": f"Go to {location['name']} · {location['duration_minutes']} min", "consequential": False})
         if aftermath:
             suggestions.append({"command": "wait 1 minute", "label": "Wait · 1 min", "consequential": False})
+            deadline = self.repository.public_chapter_deadline()
+            if deadline is not None and deadline > self.repository.current_time:
+                remaining = deadline - self.repository.current_time
+                suggestions.append({"command": f"wait {remaining} minutes", "label": f"Finish aftermath · {remaining} min", "consequential": False})
         return suggestions
 
     def player_guidance(self) -> dict:
@@ -141,7 +153,7 @@ class GameApplication:
             if remaining is not None:
                 message += f" The aftermath ends in {remaining} mission minutes."
         else:
-            message = "Question the crew and compare their plans. NPCs can decide without you as mission time advances."
+            message = self.repository.scenario_presentation().get("investigation_hint", "Question the crew and compare their plans. NPCs can decide without you as mission time advances.")
         return {"phase": phase, "message": message,
                 "objective": self.repository.scenario_presentation().get("objective", "Explore and decide what to do."),
                 "suggestions": self.suggested_commands(),
@@ -152,7 +164,7 @@ class GameApplication:
         consequences = self.repository.player_consequences()
         if not ended and not consequences:
             return ["The chapter is still unfolding. No decisive action has been recorded in your view yet."]
-        lines = ["=== Chapter complete ===" if ended else "=== Crisis aftermath ===",
+        lines = ["=== Chapter complete ===" if ended else "=== Decision aftermath ===",
                  f"Mission time: {self.repository.current_time} minutes.", "What you witnessed:"]
         lines.extend(item["summary"] for item in consequences)
         if not consequences:
@@ -206,7 +218,7 @@ class GameApplication:
         player = self.repository.get_player()
         lines = ["=== People ==="]
         for npc in self.repository.list_npcs():
-            presence = "here" if npc["location_id"] == player["location_id"] else "elsewhere"
+            presence = "here" if npc["location_id"] == player["location_id"] and self.repository.pending_activity(npc["id"]) is None else "elsewhere"
             appearance = self.repository.appearance_for(npc["id"], "character")
             role = appearance.get("role") or appearance.get("clothing")
             detail = f" - {role}" if role else ""
@@ -264,7 +276,7 @@ class GameApplication:
                 "\n  npc <name>                   inspect private NPC engine state"
                 if self.developer_mode else ""
             )
-            return [HELP_TEXT + suffix, *self.timing()], False
+            return [HELP_TEXT + suffix, *self.timing(), "Examples here:\n" + "\n".join(item["command"] for item in self.suggested_commands()[:4])], False
         if lowered == "timing":
             return self.timing(), False
         if lowered in {"look", "look around", "status", "where am i"}:
@@ -363,6 +375,9 @@ class GameApplication:
                 return ["You find nothing meaningful to examine."]
             return self.engine.perform(ExamineAction(intent.target_id)).messages
         if intent.kind == "wait" and intent.minutes is not None:
+            maximum = self.repository.scenario_presentation().get("max_wait_minutes", 1440)
+            if not 1 <= intent.minutes <= maximum:
+                return [f"Wait between 1 and {maximum} minutes at a time so you can respond as events unfold."]
             if not 1 <= intent.minutes <= 1_440:
                 return ["You can only wait between 1 and 1,440 minutes."]
             return self.engine.perform(WaitAction(intent.minutes)).messages

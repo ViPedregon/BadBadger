@@ -26,6 +26,8 @@ class DialogueService:
             return ["That person is unavailable."]
         if npc["location_id"] != player["location_id"]:
             return [f"{npc['name']} is not here."]
+        if self.repository.pending_activity(npc_id) is not None:
+            return [f"{npc['name']} is travelling. Speak with them after they arrive."]
         if inspection_request(player_input):
             return [f'{npc["name"]}: "Ask me about the situation or what I believe. I cannot provide private records."']
 

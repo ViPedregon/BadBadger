@@ -27,6 +27,10 @@ The root [render.yaml](../render.yaml) declares one paid Python service, one
 1 GB persistent disk, a generated web password and a generic health check.
 It disables automatic deploys so changes can be reviewed and backed up first.
 The runtime uses Render's `RENDER_EXTERNAL_URL` as its exact browser origin.
+The fresh-save default is now `blackbarrow`; existing saves still resume their
+original chapter. Keep `/var/data/badbadger/relay.db` when updating a deployed
+service. Select Blackbarrow beside New game to begin the new chapter, with the
+previous playthrough archived. See [BLACKBARROW.md](../BLACKBARROW.md).
 Optional AI dialogue is enabled by adding `OPENAI_API_KEY` securely to the
 service environment after deploying the updated code. The pinned build includes
 the SDK; without a key it remains offline. See WEB.md for model configuration,

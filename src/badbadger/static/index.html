@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>BadBadger · Relay Crisis</title>
+  <title>BadBadger</title>
   <link rel="stylesheet" href="/assets/style.css">
   <script src="/assets/app.js" defer></script>
 </head>
 <body>
   <main>
-    <header><p class="eyebrow">BADBADGER</p><h1>Relay Crisis</h1><p>A station in trouble. Three conflicting plans. Your next move.</p></header>
+    <header><p class="eyebrow">BADBADGER</p><h1>BadBadger</h1><p>Opening your saved adventure…</p></header>
     <p id="dialogue-mode"></p>
     <section id="status" aria-label="Current situation"></section>
     <section class="guidance" aria-label="Your next move">
@@ -30,7 +30,7 @@
       <label for="command">What do you do?</label>
       <div class="input-row"><input id="command" name="command" maxlength="2000" autocomplete="off" placeholder="Try look, choices, or ask someone a question" required disabled><button id="send" disabled>Send</button></div>
     </form>
-    <div class="controls"><button id="refresh" type="button">Refresh saved game</button><button id="retry" type="button" hidden>Retry pending turn</button><button id="new-game" type="button" disabled>New game</button></div>
+    <div class="controls"><button id="refresh" type="button">Refresh saved game</button><button id="retry" type="button" hidden>Retry pending turn</button><label class="sr-only" for="chapter-selection">Chapter</label><select id="chapter-selection" disabled></select><button id="new-game" type="button" disabled>New game</button></div>
     <footer>Your progress is saved after each turn. Close this page and return to continue.</footer>
     </div>
   </main>

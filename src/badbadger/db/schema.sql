@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS characters (
 CREATE UNIQUE INDEX IF NOT EXISTS one_player
 ON characters(kind) WHERE kind = 'player';
 
+CREATE TABLE IF NOT EXISTS examination_sites (
+    subject_id TEXT PRIMARY KEY,
+    location_id TEXT NOT NULL REFERENCES locations(id),
+    beliefs_json TEXT NOT NULL DEFAULT '[]'
+);
+
 CREATE TABLE IF NOT EXISTS character_identity (
     character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
     identity_id TEXT NOT NULL UNIQUE,

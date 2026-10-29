@@ -1,12 +1,13 @@
-# Relay Crisis in a browser
+# BadBadger in a browser
 
 The browser app runs the existing Python game engine through `RelayService`.
 It is single-player and uses optional AI dialogue and unfamiliar-input
 interpretation when `OPENAI_API_KEY` is configured on the server. Without a key,
 or with `--offline`, it uses deterministic offline dialogue. No engine rules
 live in JavaScript. The current cast is
-Player, Director Sable, Technician Orr and Dr. Lin; future character authoring
-is separate.
+Victor Gravenholt, Matilda Ash and Captain Horace in **Blackbarrow: The North Road**.
+Relay Crisis remains a separate prototype with Player, Sable, Orr and Lin.
+See [BLACKBARROW.md](BLACKBARROW.md) for the opening beta chapter.
 
 ## Install and run
 
@@ -47,8 +48,8 @@ The page shows current surroundings, the saved story and a text input. Try
 before it is shown as saved. Close the page and reopen it to resume; the save
 also survives a server restart when the same database path is used. Game time
 does not advance while the page is closed. **New game** asks for confirmation,
-archives the current playthrough on the server, and starts Relay Crisis at minute
-zero. There is no developer inspector. `summary` reports only consequences you
+archives the current playthrough on the server, and starts the selected chapter
+at minute zero. There is no developer inspector. `summary` reports only consequences you
 witnessed and accepted requests you made, rather than private NPC goal outcomes.
 
 The objective and current phase stay visible above the story. Suggestions show
@@ -68,6 +69,13 @@ New games keep the same login and AI configuration. The current page shows only
 the new playthrough's transcript; old engine state and turn history remain in
 the same SQLite save. There is no archive browser or restore button yet. Archives
 are private server records and grow with use; they are not off-site backups.
+
+Choose the chapter in the selector beside New game. Fresh web-server saves default
+to Blackbarrow, but existing saves always resume their own chapter. Selecting a
+different chapter and confirming New game archives rather than overwrites the
+previous playthrough. The existing Render save path can stay unchanged, even when
+its filename is `relay.db`. This is chapter selection, not automatic campaign
+progression or restoration of an archived game.
 Back up the database before deploying this schema update or doing recovery work.
 If a new-game response is lost, use **Retry new game** to confirm the original
 request rather than starting over again. Other tabs must refresh before playing.

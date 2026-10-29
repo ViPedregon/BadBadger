@@ -1,5 +1,11 @@
 # Relay Crisis playtest
 
+The opening Gravenholt beta chapter is now **Blackbarrow: The North Road**;
+its scope, branch costs and automated coverage are in [BLACKBARROW.md](BLACKBARROW.md).
+The procedure below remains useful for the Relay Crisis prototype. Neither
+chapter's automated coverage replaces eventual external playtesting, but users
+do not need to manually recheck every implementation checkpoint.
+
 This build is ready for a short external playtest. The goal is to discover
 where a new player becomes confused, not to teach them the intended solution.
 

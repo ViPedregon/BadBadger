@@ -14,6 +14,7 @@ import threading
 import time
 from importlib.resources import files
 from urllib.parse import urlsplit
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -21,6 +22,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from badbadger.service import RelayService, TurnConflict
+from badbadger.scenarios.catalog import CHAPTERS
 
 logger = logging.getLogger(__name__)
 security = HTTPBasic(auto_error=False)
@@ -38,6 +40,7 @@ class NewGameRequest(BaseModel):
     request_id: str = Field(min_length=1, max_length=128)
     expected_revision: StrictInt = Field(ge=0)
     confirmed: StrictBool
+    scenario: Literal["relay_crisis", "blackbarrow"] | None = None
 
 
 class RateLimit:
@@ -63,7 +66,7 @@ class RateLimit:
             entries.append(now)
 
 
-def create_app(database: str | Path, password: str, origin: str, *, offline: bool = False) -> FastAPI:
+def create_app(database: str | Path, password: str, origin: str, *, offline: bool = False, scenario: str = "relay_crisis") -> FastAPI:
     """Create one private game. These arguments are server configuration only."""
     parsed = urlsplit(origin)
     if (parsed.scheme not in {"https", "http"} or not parsed.hostname
@@ -78,7 +81,7 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
 
     @asynccontextmanager
     async def lifespan(app):
-        app.state.game = RelayService(database, offline=offline)
+        app.state.game = RelayService(database, offline=offline, scenario=scenario)
         yield
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -177,7 +180,7 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
     def new_game(payload: NewGameRequest, request: Request):
         limiter.check("turns", 60)
         try:
-            return request.app.state.game.new_game(payload.request_id, payload.expected_revision, confirmed=payload.confirmed)
+            return request.app.state.game.new_game(payload.request_id, payload.expected_revision, confirmed=payload.confirmed, scenario=payload.scenario)
         except TurnConflict as error:
             raise HTTPException(409, str(error)) from None
         except ValueError as error:
@@ -195,6 +198,8 @@ def main():
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="127.0.0.1", help="bind address; public/container binding requires an HTTPS origin")
     parser.add_argument("--offline", action="store_true", help="disable AI calls even when an API key is configured")
+    parser.add_argument("--scenario", choices=tuple(CHAPTERS), default=os.environ.get("BADBADGER_SCENARIO", "blackbarrow"),
+                        help="chapter for a fresh save; existing saves always resume")
     args = parser.parse_args()
     # New saves and SQLite sidecar files should be private on hosted instances.
     os.umask(0o077)
@@ -203,7 +208,7 @@ def main():
     try:
         if args.host not in {"127.0.0.1", "localhost", "::1"} and urlsplit(origin).scheme != "https":
             raise ValueError("A public/container bind requires an explicitly configured HTTPS origin")
-        app = create_app(args.save, password, origin, offline=args.offline)
+        app = create_app(args.save, password, origin, offline=args.offline, scenario=args.scenario)
     except ValueError as error:
         parser.error(str(error))
     # An HTTPS reverse proxy can forward to this loopback-only listener.

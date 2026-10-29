@@ -12,6 +12,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.14
+      - key: BADBADGER_SCENARIO
+        value: blackbarrow
       - key: BADBADGER_WEB_PASSWORD
         generateValue: true
     disk:

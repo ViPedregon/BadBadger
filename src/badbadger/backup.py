@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import sqlite3
 import tempfile
+from badbadger.scenarios.catalog import CHAPTERS
 
 
 def snapshot(source: str | Path, destination: str | Path) -> Path:
@@ -33,8 +34,8 @@ def snapshot(source: str | Path, destination: str | Path) -> Path:
                 if writer.execute("PRAGMA foreign_key_check").fetchone() is not None:
                     raise ValueError("SQLite foreign key check failed")
                 scenario = writer.execute("SELECT scenario_id FROM simulation WHERE id=1").fetchone()
-                if scenario != ("relay-crisis-0.1",):
-                    raise ValueError("Expected a Relay Crisis web save")
+                if scenario is None or scenario[0] not in {value["scenario_id"] for value in CHAPTERS.values()}:
+                    raise ValueError("Expected a supported BadBadger web save")
                 revision = writer.execute("SELECT revision FROM player_session WHERE id=1").fetchone()
                 count, maximum = writer.execute("SELECT count(*), coalesce(max(revision),0) FROM player_turns").fetchone()
                 if revision is None or revision[0] != count or revision[0] != maximum:
@@ -56,7 +57,7 @@ def snapshot(source: str | Path, destination: str | Path) -> Path:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Verified Relay Crisis SQLite backup/restore (never overwrites)")
+    parser = argparse.ArgumentParser(description="Verified BadBadger SQLite backup/restore (never overwrites)")
     parser.add_argument("operation", choices=("backup", "restore"))
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--destination", required=True, type=Path)

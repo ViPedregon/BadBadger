@@ -1,0 +1,595 @@
+{
+  "scenario_id": "blackbarrow-north-road-0.1",
+  "presentation": {
+    "title": "Blackbarrow: The North Road",
+    "intro": "Lord Edric has asked Victor to settle a practical dispute on the north road: a rain-damaged causeway has stopped a small convoy bringing grain and medical supplies toward Blackbarrow. Families are waiting with the wagons, and daylight is running short. In a quiet gatehouse room, Horace calls Matilda “Tracks”; she answers with a very quiet “Bear.” His raised eyebrow suggests he heard perfectly well. This is familiar company, not a party meeting for the first time.",
+    "objective": "As Victor, choose how to move or shelter the waiting convoy before the light fails. Consult Matilda and Horace, inspect the road if useful, then commit a plan together at the Gatehouse.",
+    "starting_hint": "Start with examine convoy petition. Matilda and Horace already trust your leadership; you do not need to earn back their friendship. All three plans have a cost. Your companions accompany you when they are free to travel.",
+    "investigation_hint": "Compare the causeway and the high track, or trust your companions’ judgment. Return to the Gatehouse to commit a plan. If you delay too long, they may make a practical decision themselves.",
+    "public_action_ids": [
+      "controlled_crossing",
+      "high_track",
+      "hold_convoy"
+    ],
+    "max_wait_minutes": 6
+  },
+  "locations": [
+    {
+      "id": "gatehouse",
+      "name": "Gatehouse",
+      "description": "A quiet gatehouse room overlooking the waiting convoy. A written petition lies on the table. Matilda and Horace can brief you here; all final convoy instructions must be issued here."
+    },
+    {
+      "id": "causeway",
+      "name": "Causeway",
+      "description": "Rainwater runs below a damaged stretch of the low road. The remaining stonework looks narrow but usable under careful control. Fresh ruts show why wagoners disagree about the risk."
+    },
+    {
+      "id": "high_track",
+      "name": "High Track",
+      "description": "A higher footpath skirts the wet ground. Old route markers remain visible. It may get people through, but the ascent is no road for loaded wagons."
+    }
+  ],
+  "connections": [
+    {
+      "from": "gatehouse",
+      "to": "causeway",
+      "minutes": 2
+    },
+    {
+      "from": "causeway",
+      "to": "gatehouse",
+      "minutes": 2
+    },
+    {
+      "from": "gatehouse",
+      "to": "high_track",
+      "minutes": 3
+    },
+    {
+      "from": "high_track",
+      "to": "gatehouse",
+      "minutes": 3
+    },
+    {
+      "from": "causeway",
+      "to": "high_track",
+      "minutes": 2
+    },
+    {
+      "from": "high_track",
+      "to": "causeway",
+      "minutes": 2
+    }
+  ],
+  "characters": [
+    {
+      "id": "victor",
+      "location_id": "gatehouse",
+      "identity_file": "characters/victor-gravenholt.json",
+      "relationships": [
+        {
+          "target_id": "matilda",
+          "trust": 0.8,
+          "affinity": 0.65,
+          "reason": "Established trust in Matilda’s field judgment."
+        },
+        {
+          "target_id": "horace",
+          "trust": 0.8,
+          "affinity": 0.65,
+          "reason": "Established trust in Horace’s experience."
+        }
+      ]
+    },
+    {
+      "id": "matilda",
+      "location_id": "gatehouse",
+      "identity_file": "characters/matilda-ash.json",
+      "parameters": {
+        "autonomy_enabled": true,
+        "follow_player": true,
+        "first_decision_after_minutes": 24,
+        "decision_cooldown_minutes": 4,
+        "situation_advice": "The high track can take people and hand-carried medical supplies, not the loaded wagons. Examine ridge markers if you want to see the ground yourself. We issue a final plan at the Gatehouse.",
+        "private_party_familiarity": "This chapter has only the three established companions as present characters. In their private exchanges Horace calls Matilda Tracks, while Victor and Matilda call Horace Bear; he generally hears it. Use affectionate familiarity rather than new-acquaintance distrust. Do not broadcast private forms of address to strangers."
+      },
+      "goals": [
+        {
+          "id": "find_passage",
+          "description": "Return to the Gatehouse and guide the high track if the convoy still has no decision as daylight fades.",
+          "priority": 2
+        }
+      ],
+      "beliefs": [
+        {
+          "subject_id": "high_track",
+          "predicate": "passable_on_foot",
+          "value": true,
+          "confidence": 1.0
+        },
+        {
+          "subject_id": "high_track",
+          "predicate": "supports_loaded_wagons",
+          "value": false,
+          "confidence": 1.0
+        }
+      ],
+      "relationships": [
+        {
+          "target_id": "victor",
+          "trust": 0.8,
+          "affinity": 0.65,
+          "reason": "Victor respects her judgment; their long friendship predates this journey."
+        },
+        {
+          "target_id": "horace",
+          "trust": 0.8,
+          "affinity": 0.65,
+          "reason": "Established affectionate, teasing friendship."
+        }
+      ]
+    },
+    {
+      "id": "horace",
+      "location_id": "gatehouse",
+      "identity_file": "characters/horace.json",
+      "parameters": {
+        "autonomy_enabled": true,
+        "follow_player": true,
+        "first_decision_after_minutes": 28,
+        "decision_cooldown_minutes": 4,
+        "situation_advice": "A controlled crossing can bring the wagons and their cargo through one at a time, but it commits household guards and leaves little margin. Holding the convoy at the Gatehouse avoids that risk but consumes stores and delays the supplies. Examine causeway ruts for the crossing and the convoy petition for the needs. Final instructions belong at the Gatehouse.",
+        "private_party_familiarity": "Within the established trio, privately address Matilda as Tracks when appropriate. Victor and Matilda sometimes tease you with Bear; you generally hear perfectly well. This is affectionate older-sibling banter, not a public introduction or a fatherly relationship."
+      },
+      "goals": [
+        {
+          "id": "protect_convoy",
+          "description": "Return to the Gatehouse to oversee a controlled crossing or hold the convoy if no plan is settled before the light goes.",
+          "priority": 3
+        }
+      ],
+      "beliefs": [
+        {
+          "subject_id": "causeway",
+          "predicate": "requires_single_wagons",
+          "value": true,
+          "confidence": 1.0
+        },
+        {
+          "subject_id": "holding",
+          "predicate": "delays_supplies",
+          "value": true,
+          "confidence": 1.0
+        }
+      ],
+      "relationships": [
+        {
+          "target_id": "victor",
+          "trust": 0.8,
+          "affinity": 0.65,
+          "reason": "Affectionate trust in his younger companion and political lead."
+        },
+        {
+          "target_id": "matilda",
+          "trust": 0.8,
+          "affinity": 0.65,
+          "reason": "Affectionate teasing bond, with respect for her field expertise."
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "subject_id": "chapter",
+      "predicate": "resolved",
+      "value": false,
+      "hidden": true
+    },
+    {
+      "subject_id": "chapter",
+      "predicate": "outcome",
+      "value": "undecided",
+      "hidden": true
+    }
+  ],
+  "examinations": [
+    {
+      "subject_id": "convoy_petition",
+      "location_id": "gatehouse",
+      "description": "The petition lists grain wagons, medical supplies and travelling families. The wagoners want their loads delivered; the families need shelter before dark. A crossing would deliver the full cargo but commit guards. The high track can take people and portable medical supplies, leaving the grain wagons waiting. Holding everyone here uses gatehouse stores and delays deliveries. None of the three plans serves every need.",
+      "beliefs": [
+        {
+          "subject_id": "convoy",
+          "predicate": "includes_families",
+          "value": true,
+          "confidence": 1.0
+        },
+        {
+          "subject_id": "convoy",
+          "predicate": "carries_medical_supplies",
+          "value": true,
+          "confidence": 1.0
+        }
+      ]
+    },
+    {
+      "subject_id": "causeway_ruts",
+      "location_id": "causeway",
+      "description": "At the damaged stretch, the surviving stonework is wide enough for one wagon, not a passing place. Ruts near the broken edge explain the danger of an uncontrolled crossing. Horace’s proposal is feasible with guides, a strict one-wagon sequence and committed household guards; it is not risk-free.",
+      "beliefs": [
+        {
+          "subject_id": "causeway",
+          "predicate": "requires_single_wagons",
+          "value": true,
+          "confidence": 1.0
+        }
+      ]
+    },
+    {
+      "subject_id": "ridge_markers",
+      "location_id": "high_track",
+      "description": "Sound footing connects the old route markers. The high track is passable for people on foot with hand-carried supplies, but too steep and narrow for loaded wagons. It would move the families and medicine while the grain loads remain behind.",
+      "beliefs": [
+        {
+          "subject_id": "high_track",
+          "predicate": "passable_on_foot",
+          "value": true,
+          "confidence": 1.0
+        },
+        {
+          "subject_id": "high_track",
+          "predicate": "supports_loaded_wagons",
+          "value": false,
+          "confidence": 1.0
+        }
+      ]
+    }
+  ],
+  "npc_actions": [
+    {
+      "id": "controlled_crossing",
+      "character_id": "horace",
+      "location_id": "gatehouse",
+      "label": "Oversee a controlled crossing",
+      "description": "Commit guards to bring the wagons and families over the damaged causeway in a strict sequence.",
+      "preconditions": [
+        {
+          "subject_id": "chapter",
+          "predicate": "resolved",
+          "equals": false
+        }
+      ],
+      "effects": {
+        "cancel_events": [
+          "road_warning"
+        ],
+        "player_trust_required": 0.6,
+        "facts": [
+          {
+            "subject_id": "chapter",
+            "predicate": "resolved",
+            "value": true,
+            "hidden": true
+          },
+          {
+            "subject_id": "chapter",
+            "predicate": "outcome",
+            "value": "controlled_crossing",
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "people_sheltered",
+            "value": true,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "grain_delivered",
+            "value": true,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "medicine_delivered",
+            "value": true,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "stores_spent",
+            "value": false,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "guards_committed",
+            "value": true,
+            "hidden": true
+          }
+        ],
+        "observations": [
+          {
+            "kind": "witnessed_action",
+            "subject_id": "convoy",
+            "summary": "Horace organizes the controlled crossing. The families, grain and medical supplies reach the Blackbarrow side, but household guards are tied up at the damaged road and the passage uses the last good light. The immediate delivery is secured at the cost of spare security capacity.",
+            "salience": 0.95
+          }
+        ],
+        "goals": [
+          {
+            "character_id": "matilda",
+            "goal_id": "find_passage",
+            "status": "completed",
+            "reason": "The convoy and its cargo crossed under a controlled security plan."
+          },
+          {
+            "character_id": "horace",
+            "goal_id": "protect_convoy",
+            "status": "completed",
+            "reason": "The convoy and its cargo crossed under a controlled security plan."
+          }
+        ],
+        "relationships": [
+          {
+            "observer_id": "horace",
+            "target_id": "victor",
+            "trust_delta": 0.05,
+            "affinity_delta": 0.05,
+            "when_requested_by_player": true,
+            "reason": "Victor entrusted the companion with a considered plan."
+          }
+        ],
+        "scheduled_events": [
+          {
+            "type": "set_simulation_status",
+            "delay_minutes": 6,
+            "payload": {
+              "status": "ended",
+              "player_visible": true,
+              "visible_message": "The convoy’s immediate fate is settled. The three have a decision and its costs to carry forward. This chapter is complete."
+            }
+          }
+        ],
+        "visible_message": "Horace organizes the controlled crossing. The families, grain and medical supplies reach the Blackbarrow side, but household guards are tied up at the damaged road and the passage uses the last good light. The immediate delivery is secured at the cost of spare security capacity."
+      }
+    },
+    {
+      "id": "high_track",
+      "character_id": "matilda",
+      "location_id": "gatehouse",
+      "label": "Guide the high track",
+      "description": "Lead the families and hand-carried medical supplies along the high track, leaving loaded wagons behind.",
+      "preconditions": [
+        {
+          "subject_id": "chapter",
+          "predicate": "resolved",
+          "equals": false
+        }
+      ],
+      "effects": {
+        "cancel_events": [
+          "road_warning"
+        ],
+        "player_trust_required": 0.6,
+        "facts": [
+          {
+            "subject_id": "chapter",
+            "predicate": "resolved",
+            "value": true,
+            "hidden": true
+          },
+          {
+            "subject_id": "chapter",
+            "predicate": "outcome",
+            "value": "high_track",
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "people_sheltered",
+            "value": true,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "grain_delivered",
+            "value": false,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "medicine_delivered",
+            "value": true,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "stores_spent",
+            "value": false,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "guards_committed",
+            "value": false,
+            "hidden": true
+          }
+        ],
+        "observations": [
+          {
+            "kind": "witnessed_action",
+            "subject_id": "convoy",
+            "summary": "Matilda marks out the high track and arranges passage for the families and hand-carried medical supplies. The people reach shelter without risking the damaged wagon road, but the grain wagons remain on the wrong side and another delivery arrangement will be needed.",
+            "salience": 0.95
+          }
+        ],
+        "goals": [
+          {
+            "character_id": "matilda",
+            "goal_id": "find_passage",
+            "status": "completed",
+            "reason": "The families and medicine moved by the high track; the grain wagons stayed behind."
+          },
+          {
+            "character_id": "horace",
+            "goal_id": "protect_convoy",
+            "status": "completed",
+            "reason": "The families and medicine moved by the high track; the grain wagons stayed behind."
+          }
+        ],
+        "relationships": [
+          {
+            "observer_id": "matilda",
+            "target_id": "victor",
+            "trust_delta": 0.05,
+            "affinity_delta": 0.05,
+            "when_requested_by_player": true,
+            "reason": "Victor entrusted the companion with a considered plan."
+          }
+        ],
+        "scheduled_events": [
+          {
+            "type": "set_simulation_status",
+            "delay_minutes": 6,
+            "payload": {
+              "status": "ended",
+              "player_visible": true,
+              "visible_message": "The convoy’s immediate fate is settled. The three have a decision and its costs to carry forward. This chapter is complete."
+            }
+          }
+        ],
+        "visible_message": "Matilda marks out the high track and arranges passage for the families and hand-carried medical supplies. The people reach shelter without risking the damaged wagon road, but the grain wagons remain on the wrong side and another delivery arrangement will be needed."
+      }
+    },
+    {
+      "id": "hold_convoy",
+      "character_id": "horace",
+      "location_id": "gatehouse",
+      "label": "Hold the convoy",
+      "description": "Keep the convoy sheltered at the Gatehouse rather than attempt a late crossing.",
+      "preconditions": [
+        {
+          "subject_id": "chapter",
+          "predicate": "resolved",
+          "equals": false
+        }
+      ],
+      "effects": {
+        "cancel_events": [
+          "road_warning"
+        ],
+        "player_trust_required": 0.6,
+        "facts": [
+          {
+            "subject_id": "chapter",
+            "predicate": "resolved",
+            "value": true,
+            "hidden": true
+          },
+          {
+            "subject_id": "chapter",
+            "predicate": "outcome",
+            "value": "hold_convoy",
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "people_sheltered",
+            "value": true,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "grain_delivered",
+            "value": false,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "medicine_delivered",
+            "value": false,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "stores_spent",
+            "value": true,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "guards_committed",
+            "value": false,
+            "hidden": true
+          }
+        ],
+        "observations": [
+          {
+            "kind": "witnessed_action",
+            "subject_id": "convoy",
+            "summary": "Horace holds the convoy at the Gatehouse and arranges shelter. No one is sent onto uncertain ground in fading light, but food and fuel come out of household stores and the grain and medical deliveries are delayed.",
+            "salience": 0.95
+          }
+        ],
+        "goals": [
+          {
+            "character_id": "matilda",
+            "goal_id": "find_passage",
+            "status": "abandoned",
+            "reason": "The convoy was sheltered at the Gatehouse, delaying delivery and drawing on household stores."
+          },
+          {
+            "character_id": "horace",
+            "goal_id": "protect_convoy",
+            "status": "completed",
+            "reason": "The convoy was sheltered at the Gatehouse, delaying delivery and drawing on household stores."
+          }
+        ],
+        "relationships": [
+          {
+            "observer_id": "horace",
+            "target_id": "victor",
+            "trust_delta": 0.05,
+            "affinity_delta": 0.05,
+            "when_requested_by_player": true,
+            "reason": "Victor entrusted the companion with a considered plan."
+          }
+        ],
+        "scheduled_events": [
+          {
+            "type": "set_simulation_status",
+            "delay_minutes": 6,
+            "payload": {
+              "status": "ended",
+              "player_visible": true,
+              "visible_message": "The convoy’s immediate fate is settled. The three have a decision and its costs to carry forward. This chapter is complete."
+            }
+          }
+        ],
+        "visible_message": "Horace holds the convoy at the Gatehouse and arranges shelter. No one is sent onto uncertain ground in fading light, but food and fuel come out of household stores and the grain and medical deliveries are delayed."
+      }
+    }
+  ],
+  "events": [
+    {
+      "type": "narration",
+      "due_time": 12,
+      "cancellation_key": "road_warning",
+      "payload": {
+        "player_visible": true,
+        "message": "The afternoon bell carries across the road. The convoy is still waiting; there is time to decide, but not to investigate indefinitely."
+      }
+    },
+    {
+      "type": "narration",
+      "due_time": 20,
+      "cancellation_key": "road_warning",
+      "payload": {
+        "player_visible": true,
+        "message": "The light is turning. The families need a route or shelter soon; your companions cannot leave the convoy without a plan much longer."
+      }
+    }
+  ]
+}

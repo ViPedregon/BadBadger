@@ -48,7 +48,7 @@ class BrowserTests(unittest.TestCase):
 
     def start_server(self):
         self.process = subprocess.Popen(
-            [sys.executable, "-m", "badbadger.web", "--offline", "--save", str(self.save), "--port", str(self.port)],
+            [sys.executable, "-m", "badbadger.web", "--offline", "--scenario", "relay_crisis", "--save", str(self.save), "--port", str(self.port)],
             env={**os.environ, "BADBADGER_WEB_PASSWORD": self.password, "BADBADGER_WEB_ORIGIN": self.origin},
             stdout=self.log, stderr=self.log,
         )
@@ -157,6 +157,43 @@ class BrowserTests(unittest.TestCase):
         expect(self.page.locator(".player")).to_have_count(0)
         expect(self.page.locator("#status")).to_contain_text("Mission time: 0 minutes.")
         self.command("wait 1")
+
+    def test_blackbarrow_selection_investigation_resume_restart_and_ending(self):
+        self.command("examine situation table")
+        self.page.locator("#chapter-selection").select_option("blackbarrow")
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator("#notice")).to_contain_text("New game started")
+        expect(self.page.locator("h1")).to_have_text("Blackbarrow: The North Road")
+        expect(self.page.locator(".player")).to_have_count(0)
+        self.command("self")
+        expect(self.page.locator("#transcript")).to_contain_text("You play Victor Gravenholt")
+        self.command("go to Causeway")
+        expect(self.page.locator("#status")).to_contain_text("Captain Horace")
+        expect(self.page.locator("#status")).to_contain_text("Matilda Ash")
+        self.command("examine causeway ruts")
+        self.command("journal")
+        self.context.close()
+        self.context = self.browser.new_context(http_credentials={"username": "victor", "password": self.password})
+        self.page = self.context.new_page()
+        self.page.goto(self.origin)
+        expect(self.page.locator("h1")).to_have_text("Blackbarrow: The North Road")
+        expect(self.page.locator("#status")).to_contain_text("[Causeway]")
+        expect(self.page.locator(".player")).to_have_count(4)
+        self.stop_server()
+        self.start_server()
+        self.page.reload()
+        expect(self.page.locator("#status")).to_contain_text("[Causeway]")
+        self.command("go to Gatehouse")
+        self.command("tell Horace oversee a controlled crossing")
+        expect(self.page.locator("#recap")).to_contain_text("spare security capacity")
+        self.command("ask Matilda what now")
+        self.command("wait 6 minutes")
+        expect(self.page.locator("#phase")).to_contain_text("chapter is complete")
+        expect(self.page.locator("#recap")).to_contain_text("You asked Captain Horace")
+        public = self.page.evaluate("async () => JSON.stringify(await (await fetch('/api/game')).json())")
+        for hidden in ("Alden", "Brenner", "Elena", "Valenbruck", "author_notes"):
+            self.assertNotIn(hidden, public)
 
     def test_two_tabs_stale_turn_and_text_is_not_html(self):
         other = self.context.new_page()

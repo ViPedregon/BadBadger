@@ -141,7 +141,7 @@ class DeterministicNPCBackend:
             return NPCResponse("I have no useful action to take right now.")
         if any(
             phrase in lowered
-            for phrase in ("what now", "how do you feel", "what happened", "outcome")
+            for phrase in ("what now", "how do you feel", "what happened", "outcome", "why")
         ):
             resolved_goal = next(
                 (
@@ -161,27 +161,34 @@ class DeterministicNPCBackend:
                     "failed": "This is not the outcome I fought for.",
                     "abandoned": "That goal no longer has a path forward.",
                 }
+                player_id = next((item["id"] for item in context.visible_characters if item["kind"] == "player"), None)
                 player_relationship = next(
                     (
                         item for item in context.relationships
-                        if item["target_id"] == "player"
+                        if item["target_id"] == player_id
                     ),
                     None,
                 )
                 attitude = ""
                 if player_relationship is not None:
+                    action_id = history[-1].get("source_action_id") if history else None
+                    attributed = action_id is not None and any(
+                        change.get("source_type") == "action" and change.get("source_action_id") == action_id
+                        for change in player_relationship.get("recent_changes", [])
+                    )
                     if float(player_relationship["trust"]) >= 0.35:
-                        attitude = " I trust your part in what happened."
-                    elif float(player_relationship["trust"]) <= -0.1:
+                        attitude = " I trust your part in what happened." if attributed else " I trust your judgment."
+                    elif attributed and float(player_relationship["trust"]) <= -0.1:
                         attitude = " Your part in this has damaged my trust."
                 return NPCResponse(
                     f"{reactions[resolved_goal['status']]} {reason}{attitude}"
                 )
+        from badbadger.engine.consent import requests_action
         interaction = next(
             (
                 action for action in context.available_actions
                 if action["kind"] == "interact"
-                and all(word in lowered for word in action["label"].lower().split())
+                and requests_action(player_input, context.npc_id, context.name, action["label"])
             ),
             None,
         )
@@ -247,7 +254,8 @@ class DeterministicNPCBackend:
                     )],
                 )
 
-        if any(word in lowered for word in ("know", "think", "risk", "priority", "plan", "why")):
+        if any(word in lowered for word in ("know", "think", "risk", "priority", "plan", "why", "missing", "belong",
+                                           "notice", "recommend", "suggest", "options", "crossing", "track", "convoy", "what should", "what can")):
             active = [goal for goal in context.goals if goal.get("status", "active") == "active"]
             lines = ["My priority is to " + active[0]["description"][0].lower()
                      + active[0]["description"][1:]] if active else []
@@ -267,6 +275,8 @@ class DeterministicNPCBackend:
                     else:
                         lines.append(f"{qualifier} {wording[0 if belief['value'] else 1]}.")
             if lines:
+                if context.parameters.get("situation_advice"):
+                    lines.append(str(context.parameters["situation_advice"]))
                 return NPCResponse(" ".join(lines))
 
         if any(word in lowered for word in ("hello", "hi", "talk", "speak")):

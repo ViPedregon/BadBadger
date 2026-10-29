@@ -17,8 +17,9 @@ The romance and later Valenbruck/Elena developments remain authoring continuity,
 not current episodic memories. Private nicknames remain private familiarity;
 chapter context must establish their appropriate audience before using them.
 Relay Crisis retains its existing cast and scenario; New game does not replace
-Sable, Orr or Lin with the future cast. A representative production chapter is
-the next content milestone after the identities are populated.
+Sable, Orr or Lin with this cast. The opening beta chapter,
+[Blackbarrow: The North Road](BLACKBARROW.md), now uses these identities and their
+established friendship in its own scenario.
 
 ## Identity versus current mission
 

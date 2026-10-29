@@ -6,12 +6,17 @@ owns world state and validates every consequence.
 
 ## Browser application
 
-A password-protected Relay Crisis browser application is available, with optional
-AI dialogue when a server-side OpenAI API key is configured.
+A password-protected browser application now includes **Blackbarrow: The North
+Road**, the opening Gravenholt beta chapter, plus the Relay Crisis prototype.
+AI dialogue is optional when a server-side OpenAI API key is configured.
 It saves every turn in SQLite and resumes the same game after closing the
 browser or restarting the server. See [WEB.md](WEB.md) for setup, authentication,
 testing, and the remaining remote hosting steps. The Python engine owns all
 game rules; the browser displays player-facing text only.
+
+See [BLACKBARROW.md](BLACKBARROW.md) for the chapter, its three approaches and save
+compatibility. Existing Relay Crisis saves are preserved; select Blackbarrow beside
+New game to begin Victor's adventure.
 
 ## Play Relay Crisis
 

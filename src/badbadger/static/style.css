@@ -1,7 +1,7 @@
 :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111715; color: #e5e9df; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-main { max-width: 850px; margin: auto; padding: 32px 20px 240px; }
+main { max-width: 850px; margin: auto; padding: 32px 20px 320px; }
 header { border-bottom: 1px solid #465448; padding-bottom: 16px; }
 .eyebrow { letter-spacing: .2em; color: #adca8c; font-size: .8rem; }
 h1 { font-family: Georgia, serif; font-size: 2.5rem; margin: 12px 0; }
@@ -17,6 +17,12 @@ input { flex: 1; min-width: 0; background: #19211c; color: inherit; border: 1px 
 button { cursor: pointer; background: #bed69b; color: #152013; border: 0; border-radius: 4px; padding: 12px 18px; font: inherit; }
 button:disabled { opacity: .5; cursor: wait; }
 input:focus-visible, button:focus-visible, section:focus-visible { outline: 3px solid #f0d695; outline-offset: 3px; }
+select { background: #19211c; color: inherit; border: 1px solid #83977c; padding: 8px; border-radius: 4px; font: inherit; max-width: 100%; min-width: 0; }
+.composer .controls { align-items: center; }
+.composer .controls label { margin: 0; font-size: .85rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+#chapter-selection { flex: 1 1 180px; }
+.composer #notice { font-size: .9rem; margin: 6px 0; line-height: 1.35; min-height: 1.35em; }
 .controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .controls button { background: transparent; border: 1px solid #83977c; color: #d2dec7; }
 footer { font-size: .85rem; margin-top: 28px; line-height: 1.6; }
@@ -30,4 +36,4 @@ summary { cursor: pointer; }
 .composer { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: min(850px, 100%); padding: 12px 20px; background: #111715; border-top: 1px solid #465448; z-index: 2; }
 .composer label { margin-top: 0; }
 .composer footer { margin: 10px 0 0; }
-@media (max-width: 480px) { main { padding: 20px 14px 240px; } .composer { padding: 12px 14px; } }
+@media (max-width: 480px) { main { padding: 20px 14px 320px; } .composer { padding: 12px 14px; } }
