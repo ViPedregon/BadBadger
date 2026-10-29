@@ -123,12 +123,11 @@ class GameApplication:
                                 "label": f"Ask {npc['name']} · 1 min", "consequential": False})
             # Relay Crisis publicly introduces these three plans. Never expose
             # arbitrary scenario actions, scores, preconditions or private goals.
-            if not aftermath:
-                for action in self.repository.available_npc_actions(npc["id"]):
-                    if self.repository.scenario_id == "relay-crisis-0.1" or action["id"] in public_actions:
-                        suggestions.append({"command": f"tell {npc['name']} {action['label'].lower()}",
-                                            "label": f"Request: {action['label']} · irreversible if accepted",
-                                            "consequential": True})
+            for action in self.repository.available_npc_actions(npc["id"]):
+                if self.repository.scenario_id == "relay-crisis-0.1" or action["id"] in public_actions:
+                    suggestions.append({"command": f"tell {npc['name']} {action['label'].lower()}",
+                                        "label": f"Request: {action['label']} · irreversible if accepted",
+                                        "consequential": True})
         for location in self.repository.reachable_locations(player["location_id"]):
             suggestions.append({"command": f"go to {location['name']}",
                                 "label": f"Go to {location['name']} · {location['duration_minutes']} min", "consequential": False})

@@ -39,6 +39,14 @@ and finish the chapter. Outcomes and their costs persist as engine facts and
 witnessed memories; a generated sentence does not determine them. There is no
 single declared correct solution or invented player dialogue.
 
+During the high-track aftermath, Victor can ask **Captain Horace, arrange a guard
+for the grain** at the Gatehouse. This optional follow-up commits household guards
+and records the grain as guarded; it does not deliver the grain or change the
+chosen route. It appears among the public suggestions while available. Questions
+about guarding do not authorize the action. The six-minute aftermath still ends
+the chapter. Existing saves retain their original authored actions; start a new
+Blackbarrow game after updating to use this addition.
+
 ## Time and independent companions
 
 Travel takes two or three mission minutes, inspection two, and successful

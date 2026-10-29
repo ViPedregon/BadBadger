@@ -9,7 +9,8 @@
     "public_action_ids": [
       "controlled_crossing",
       "high_track",
-      "hold_convoy"
+      "hold_convoy",
+      "guard_grain"
     ],
     "max_wait_minutes": 6
   },
@@ -569,6 +570,51 @@
           }
         ],
         "visible_message": "Horace holds the convoy at the Gatehouse and arranges shelter. No one is sent onto uncertain ground in fading light, but food and fuel come out of household stores and the grain and medical deliveries are delayed."
+      }
+    },
+    {
+      "id": "guard_grain",
+      "character_id": "horace",
+      "location_id": "gatehouse",
+      "label": "Arrange a guard for the grain",
+      "description": "After the high-track passage, commit household guards to protect the waiting grain wagons without moving them.",
+      "preconditions": [
+        {
+          "subject_id": "chapter",
+          "predicate": "outcome",
+          "equals": "high_track"
+        },
+        {
+          "subject_id": "convoy",
+          "predicate": "guards_committed",
+          "equals": false
+        }
+      ],
+      "effects": {
+        "player_trust_required": 0.6,
+        "facts": [
+          {
+            "subject_id": "convoy",
+            "predicate": "guards_committed",
+            "value": true,
+            "hidden": true
+          },
+          {
+            "subject_id": "convoy",
+            "predicate": "grain_guarded",
+            "value": true,
+            "hidden": true
+          }
+        ],
+        "observations": [
+          {
+            "kind": "witnessed_action",
+            "subject_id": "convoy",
+            "summary": "Horace arranges a household guard for the grain wagons left behind. The grain is guarded, not delivered; household guards remain committed until another delivery arrangement is made.",
+            "salience": 0.9
+          }
+        ],
+        "visible_message": "Horace arranges a household guard for the grain wagons left behind. The grain is guarded, not delivered; household guards remain committed until another delivery arrangement is made."
       }
     }
   ],

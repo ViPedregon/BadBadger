@@ -65,6 +65,28 @@ class BlackbarrowTests(unittest.TestCase):
                 self.assertNotIn("decision_score", recap)
                 self.assertNotIn("Alden", recap)
 
+    def test_guard_grain_followup_is_validated_persistent_and_not_delivery(self):
+        self.assertNotIn("arrange a guard", str(self.game.view()["guidance"]["suggestions"]))
+        self.command("tell Horace arrange a guard for the grain")
+        with GameRepository(self.path) as repository:
+            self.assertIsNone(repository.get_fact("convoy", "grain_guarded"))
+        self.command("tell Matilda guide the high track")
+        self.assertIn("arrange a guard", str(self.game.view()["guidance"]["suggestions"]))
+        self.command("ask Captain Horace why we should arrange a guard for the grain")
+        with GameRepository(self.path) as repository:
+            self.assertFalse(repository.get_fact("convoy", "guards_committed"))
+        result = self.command("Captain Horace, arrange a guard for the grain")
+        self.assertIn("grain is guarded, not delivered", " ".join(result["messages"]))
+        self.game = RelayService(self.path)
+        with GameRepository(self.path) as repository:
+            self.assertTrue(repository.get_fact("convoy", "grain_guarded"))
+            self.assertTrue(repository.get_fact("convoy", "guards_committed"))
+            self.assertFalse(repository.get_fact("convoy", "grain_delivered"))
+            self.assertEqual(repository.get_fact("chapter", "outcome"), "high_track")
+        self.assertNotIn("arrange a guard", str(self.game.view()["guidance"]["suggestions"]))
+        self.command("wait 6")
+        self.assertIn("guard for the grain", " ".join(self.command("summary")["messages"]))
+
     def test_scoped_examination_is_not_available_remotely_and_records_direct_evidence(self):
         view = self.game.view()
         self.assertNotIn("examine ridge markers", str(view["guidance"]["suggestions"]))
