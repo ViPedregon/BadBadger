@@ -58,19 +58,27 @@ class IdentityTests(unittest.TestCase):
         self.addCleanup(engine.repository.close)
         return engine
 
-    def test_confirmed_names_have_no_invented_lore_and_are_not_activated(self):
+    def test_production_profiles_use_supplied_lore_and_stable_identifiers(self):
         root = files("badbadger.scenarios")
         for name, display, kind in (("victor-gravenholt", "Victor Gravenholt", "player"),
-                                    ("matilda-ash", "Matilda Ash", "npc"), ("horace", "Horace", "npc")):
+                                    ("matilda-ash", "Matilda Ash", "npc"), ("horace", "Captain Horace", "npc")):
             with self.subTest(name=name), as_file(root) as directory:
                 path = Path("characters") / f"{name}.json"
-                profile = load_identity(path, directory, allow_unapproved=True)
+                profile = load_identity(path, directory)
                 self.assertEqual((profile["name"], profile["kind"]), (display, kind))
-                self.assertEqual(profile["status"], "awaiting_lore")
-                self.assertEqual(profile["canon"]["biography"], [])
-                self.assertEqual(profile["personality"], {})
-                with self.assertRaises(IdentityError):
-                    load_identity(path, directory)
+                self.assertEqual(profile["status"], "approved")
+                self.assertEqual(profile["revision"], 2)
+                self.assertTrue(profile["canon"]["biography"])
+                self.assertTrue(profile["personality"])
+                self.assertNotIn("risk_tolerance", profile["personality"])
+
+    def test_unprovided_or_draft_lore_still_requires_explicit_authoring_opt_in(self):
+        for status in ("awaiting_lore", "draft"):
+            self.guide["status"] = status
+            self.write_profiles()
+            with self.assertRaises(IdentityError):
+                load_identity(Path("guide.json"), self.root)
+            self.assertEqual(load_identity(Path("guide.json"), self.root, allow_unapproved=True)["status"], status)
 
     def test_authored_identity_enters_only_its_own_npc_context(self):
         engine = self.load()

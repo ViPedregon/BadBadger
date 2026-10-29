@@ -1,13 +1,21 @@
 # Persistent character identity
 
 The confirmed production cast is Victor Gravenholt (player), Matilda Ash and
-Horace (NPCs). Their existing lore has not yet been supplied. The bundled files
-under `src/badbadger/scenarios/characters/` therefore contain **names and kinds
-only**, marked `awaiting_lore`. No profession, relationship, voice, personality,
-appearance, biography, secret or motivation has been invented for them.
+Captain Horace (NPCs). Their supplied established continuity is now encoded in
+revision-2 profiles under `src/badbadger/scenarios/characters/`. The authoring
+source and shared continuity ledger are in [lore/README.md](lore/README.md) and
+[lore/house-gravenholt.json](lore/house-gravenholt.json).
 
-The reusable identity support is implemented and tested with synthetic test
-fixtures. Populating the actual dossiers remains dependent on the user's notes.
+Public roles/history, distinct voices, qualitative personality, strengths,
+limitations, appearance and private companionship are preserved. Provisional
+ages stay provisional; Horace has no chosen surname, and Matilda's unspecified
+family history/early training remain unfilled. No numeric personality or trust
+scores have been invented. A chapter must deliberately initialize the established
+high mutual trust rather than treating the trio as strangers.
+
+The romance and later Valenbruck/Elena developments remain authoring continuity,
+not current episodic memories. Private nicknames remain private familiarity;
+chapter context must establish their appropriate audience before using them.
 Relay Crisis retains its existing cast and scenario; New game does not replace
 Sable, Orr or Lin with the future cast. A representative production chapter is
 the next content milestone after the identities are populated.

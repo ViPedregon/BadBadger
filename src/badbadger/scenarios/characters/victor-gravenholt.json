@@ -1,13 +1,165 @@
 {
   "schema_version": 1,
   "identity_id": "victor_gravenholt",
-  "revision": 1,
-  "status": "awaiting_lore",
+  "revision": 2,
+  "status": "approved",
   "name": "Victor Gravenholt",
   "kind": "player",
-  "canon": {"role": "", "voice": "", "values": [], "boundaries": [], "biography": []},
-  "personality": {},
-  "motivations": [],
-  "appearance": {},
-  "author_notes": "Only this name and player role are confirmed. Awaiting the user's existing lore; no background or personality has been invented."
+  "canon": {
+    "role": "Diplomatic representative of Lord Edric Gravenholt; second son of House Gravenholt.",
+    "voice": "Patient, curious and observant, with quiet humor; listens carefully and recognizes expertise. His defining question is “What are we missing?” This is role guidance, not imposed player dialogue.",
+    "values": [
+      "duty",
+      "competence",
+      "observation",
+      "practicality",
+      "earned loyalty",
+      "respect for others’ expertise"
+    ],
+    "boundaries": [
+      "Do not invent the player’s thoughts, feelings, words or choices.",
+      "Do not portray Victor as an exceptional warrior or default military commander.",
+      "Political skill does not imply natural cynicism."
+    ],
+    "biography": [
+      {
+        "id": "southern_northern_upbringing",
+        "summary": "Victor is the son of Lord Edric’s second wife, a noblewoman from the southern kingdoms. He was raised between northern practicality and southern courtly traditions.",
+        "visibility": "public",
+        "awareness": "conscious",
+        "importance": 0.8,
+        "certainty": 1.0,
+        "topics": [
+          "family",
+          "House Gravenholt",
+          "southern kingdoms"
+        ],
+        "related_identity_ids": [],
+        "source": "User-supplied House Gravenholt character and lore cards."
+      },
+      {
+        "id": "education_and_judgment",
+        "summary": "Victor was educated in languages, diplomacy, history and politics rather than military command. His strengths are negotiation, political judgment, building trust and assembling capable teams. He is not an exceptional warrior. He can overthink problems and underestimate how quickly diplomacy can give way to violence.",
+        "visibility": "public",
+        "awareness": "conscious",
+        "importance": 0.9,
+        "certainty": 1.0,
+        "topics": [
+          "diplomacy",
+          "education",
+          "violence"
+        ],
+        "related_identity_ids": [],
+        "source": "User-supplied House Gravenholt character and lore cards."
+      },
+      {
+        "id": "house_and_party",
+        "summary": "House Gravenholt is based at Blackbarrow on the Northern Frontier. Its words are “We Do Not Yield.” Its sigil is a black badger with extended claws on a bone-colored shield. Its philosophy is “Strong walls matter. Stronger people matter more.” Victor leads political engagement, Horace manages security and military matters, and Matilda supplies reconnaissance and field intelligence. They serve as a small diplomatic and problem-solving party under Lord Edric Gravenholt’s authority.",
+        "visibility": "public",
+        "awareness": "conscious",
+        "importance": 0.85,
+        "certainty": 1.0,
+        "topics": [
+          "House Gravenholt",
+          "Blackbarrow",
+          "duty"
+        ],
+        "related_identity_ids": [
+          "matilda_ash",
+          "horace"
+        ],
+        "source": "User-supplied House Gravenholt character and lore cards."
+      },
+      {
+        "id": "trusted_companions",
+        "summary": "Victor trusts Horace’s experience and Matilda’s field judgment. He and Matilda have a long friendship.",
+        "visibility": "public",
+        "awareness": "conscious",
+        "importance": 0.9,
+        "certainty": 1.0,
+        "topics": [
+          "trust",
+          "friendship"
+        ],
+        "related_identity_ids": [
+          "matilda_ash",
+          "horace"
+        ],
+        "source": "User-supplied House Gravenholt character and lore cards."
+      },
+      {
+        "id": "private_familiarity",
+        "summary": "Their friendship predates the opening story. They share meals, travel routines and private jokes, and have an unusually high degree of mutual trust. Their private dynamic is closer to siblings than commander and subordinates.",
+        "visibility": "private",
+        "awareness": "conscious",
+        "importance": 0.9,
+        "certainty": 1.0,
+        "topics": [
+          "friendship",
+          "travel"
+        ],
+        "related_identity_ids": [
+          "matilda_ash",
+          "horace"
+        ],
+        "source": "User-supplied House Gravenholt character and lore cards.",
+        "behavioral_guidance": "Victor’s companions are established trusted friends, not strangers. Preserve warm, familiar rapport without choosing the player’s feelings or dialogue."
+      },
+      {
+        "id": "private_bear",
+        "summary": "Victor and Matilda privately call Horace “Bear”, usually when they think he cannot hear. He generally can.",
+        "visibility": "private",
+        "awareness": "conscious",
+        "importance": 0.8,
+        "certainty": 1.0,
+        "topics": [
+          "private jokes",
+          "Horace"
+        ],
+        "related_identity_ids": [
+          "matilda_ash",
+          "horace"
+        ],
+        "source": "User-supplied House Gravenholt character and lore cards.",
+        "behavioral_guidance": "Familiar teasing with Horace is affectionate, not disrespectful or evidence that he is oblivious. Private forms of address are not public introductions."
+      },
+      {
+        "id": "gifts_to_companions",
+        "summary": "Victor gave Matilda a broken-back seax refined with subtle southern craftsmanship and had the grip of Horace’s old sword improved.",
+        "visibility": "public",
+        "awareness": "conscious",
+        "importance": 0.8,
+        "certainty": 1.0,
+        "topics": [
+          "gifts",
+          "weapons",
+          "craftsmanship"
+        ],
+        "related_identity_ids": [
+          "matilda_ash",
+          "horace"
+        ],
+        "source": "User-supplied House Gravenholt character and lore cards."
+      }
+    ]
+  },
+  "personality": {
+    "temperament": "Patient, curious, observant and quietly humorous.",
+    "decision_style": "An excellent listener; politically capable without being naturally cynical.",
+    "strengths": "Negotiation, political judgment, building trust and assembling capable teams.",
+    "limitations": "Not an exceptional warrior; may overthink and underestimate a rapid turn to violence.",
+    "defining_question": "What are we missing?"
+  },
+  "motivations": [
+    "Represent Lord Edric diplomatically.",
+    "Identify what is missing before deciding.",
+    "Recognize and draw on others’ expertise."
+  ],
+  "appearance": {
+    "role": "Diplomatic representative of Lord Edric Gravenholt",
+    "age": "Approximately 30 (provisional)",
+    "clothing": "Restrained, impeccably tailored charcoal wool, ivory linen and dark riding boots, with subtle southern influences.",
+    "accessories": "Gravenholt signet ring"
+  },
+  "author_notes": "Source: supplied established continuity. Age remains provisional. The long friendship with Matilda gradually develops into understated romance; this is a future narrative arc, not an already established romance or permission to force player feelings. No fixed birth date or exact age is established."
 }
