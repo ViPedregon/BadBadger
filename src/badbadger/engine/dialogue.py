@@ -218,7 +218,7 @@ class DialogueService:
         )
         if action is None:
             return False
-        return requests_action(player_input, npc_id, npc_name, str(action["label"]))
+        return requests_action(player_input, npc_id, npc_name, str(action["label"]), action.get("request_phrases", []))
 
     @staticmethod
     def _validate_response(response: NPCResponse) -> None:

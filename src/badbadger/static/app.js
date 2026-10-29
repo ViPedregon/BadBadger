@@ -69,6 +69,13 @@ async function load() {
   if (guidance) {
     document.querySelector("#objective").textContent = `Objective: ${guidance.objective}`;
     document.querySelector("#phase").textContent = guidance.message;
+    const stages = document.querySelector("#objective-stages");
+    stages.replaceChildren();
+    (guidance.stages || []).forEach(stage => {
+      const item = document.createElement("li");
+      item.textContent = `${stage.label}${stage.optional ? " (optional)" : ""}: ${stage.status}`;
+      stages.appendChild(item);
+    });
     const recap = document.querySelector("#recap");
     recap.hidden = guidance.recap.length === 0;
     recap.textContent = guidance.recap.join("\n");

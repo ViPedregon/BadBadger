@@ -18,6 +18,7 @@ from badbadger.engine.autonomy import AutonomyScheduler
 from badbadger.engine.dialogue import DialogueService
 from badbadger.engine.simulation import SimulationEngine
 from badbadger.scenarios.loader import load_scenario
+from badbadger.objectives import objective_stages
 
 
 HELP_TEXT = """You can type naturally. Useful examples:
@@ -154,6 +155,7 @@ class GameApplication:
         else:
             message = self.repository.scenario_presentation().get("investigation_hint", "Question the crew and compare their plans. NPCs can decide without you as mission time advances.")
         return {"phase": phase, "message": message,
+                "stages": objective_stages(self.repository),
                 "objective": self.repository.scenario_presentation().get("objective", "Explore and decide what to do."),
                 "suggestions": self.suggested_commands(),
                 "recap": self.player_summary() if ended or aftermath else []}
@@ -284,7 +286,8 @@ class GameApplication:
             presentation = self.repository.scenario_presentation()
             return ["Objective: " + presentation.get(
                 "objective", "Explore, speak with the people present, and decide what to do."
-            )], False
+            ), *[f"{stage['label']}: {stage['status']}" + (" (optional)" if stage['optional'] else "")
+                  for stage in objective_stages(self.repository)]], False
         if lowered in {"journal", "notes", "knowledge", "what do i know"}:
             return self.journal(), False
         if lowered in {"people", "characters", "cast", "who is here"}:

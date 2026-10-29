@@ -47,6 +47,32 @@ about guarding do not authorize the action. The six-minute aftermath still ends
 the chapter. Existing saves retain their original authored actions; start a new
 Blackbarrow game after updating to use this addition.
 
+## Reusable delegation and objective stages
+
+NPC actions may define `effects.request_phrases`: explicit alternative requests
+accepted by both offline dialogue and engine consent checks. For example, Horace
+accepts “guard the grain” and “secure what we leave behind” for the authored grain
+guard commitment. The same presence, location, trust, precondition and one-use
+checks apply. Questions, negation and hypothetical mentions confer no permission.
+This is bounded delegation to authored actions, not arbitrary AI-created tasks.
+Commitments currently take effect immediately; extended jobs, cancellation and
+resource allocation are future work.
+
+`presentation.objective_stages` defines public labels, alternative completion
+actions, earlier-stage dependencies, optional flags and conditional activation.
+The browser and free `objective` command show available, waiting, completed or
+not completed. The route decision completes stage one; the high-track outcome
+reveals the optional grain-security stage. An unfinished stage remains unfinished
+when the chapter ends. Conditions for actually doing work belong in engine action
+preconditions; checklist dependencies alone do not authorize or prohibit actions.
+
+Progress is derived from used engine actions whose consequences Victor witnessed,
+not generated dialogue or a client-supplied checkbox. Only authored public labels
+and statuses go to the browser; private goal scores and hidden fact conditions do
+not. The saved scenario definitions, action receipts and witness memories preserve
+progress on resume and backup without a separate competing objective state.
+Existing saves without stage definitions continue to work with no checklist.
+
 ## Time and independent companions
 
 Travel takes two or three mission minutes, inspection two, and successful

@@ -12,7 +12,30 @@
       "hold_convoy",
       "guard_grain"
     ],
-    "max_wait_minutes": 6
+    "max_wait_minutes": 6,
+    "objective_stages": [
+      {
+        "id": "passage",
+        "label": "Choose a route or shelter for the convoy",
+        "action_ids": [
+          "controlled_crossing",
+          "high_track",
+          "hold_convoy"
+        ]
+      },
+      {
+        "id": "grain_security",
+        "label": "Arrange security for the grain left behind",
+        "depends_on": "passage",
+        "activate_after": [
+          "high_track"
+        ],
+        "optional": true,
+        "action_ids": [
+          "guard_grain"
+        ]
+      }
+    ]
   },
   "locations": [
     {
@@ -614,7 +637,14 @@
             "salience": 0.9
           }
         ],
-        "visible_message": "Horace arranges a household guard for the grain wagons left behind. The grain is guarded, not delivered; household guards remain committed until another delivery arrangement is made."
+        "visible_message": "Horace arranges a household guard for the grain wagons left behind. The grain is guarded, not delivered; household guards remain committed until another delivery arrangement is made.",
+        "request_phrases": [
+          "arrange a guard for the grain wagons",
+          "guard the grain",
+          "secure the grain",
+          "protect the grain wagons",
+          "secure what we leave behind"
+        ]
       }
     }
   ],

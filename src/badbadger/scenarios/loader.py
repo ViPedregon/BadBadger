@@ -412,6 +412,8 @@ def _validate(data: dict[str, Any]) -> None:
             ):
                 raise ScenarioError(f"Invalid precondition for action {action['id']}")
         effects = action.get("effects", {})
+        if "request_phrases" in effects:
+            _validate_string_list(effects["request_phrases"], "Delegation request phrases")
         decision = effects.get("decision", {})
         if not isinstance(decision, dict):
             raise ScenarioError(f"Decision policy for action {action['id']} must be an object")
@@ -760,6 +762,31 @@ def _validate(data: dict[str, Any]) -> None:
 
     if not set(presentation.get("public_action_ids", [])).issubset(action_owners):
         raise ScenarioError("Unknown public action id")
+    stages = presentation.get("objective_stages", [])
+    if not isinstance(stages, list):
+        raise ScenarioError("Objective stages must be a list")
+    seen_stages = set()
+    for stage in stages:
+        if not isinstance(stage, dict):
+            raise ScenarioError("Objective stage must be an object")
+        for key in ("id", "label"):
+            _required(stage, key, str)
+            if not stage[key].strip():
+                raise ScenarioError("Objective stage text must not be empty")
+        if stage["id"] in seen_stages:
+            raise ScenarioError("Duplicate objective stage")
+        if "depends_on" in stage and stage["depends_on"] not in seen_stages:
+            raise ScenarioError("Objective dependencies must reference an earlier stage")
+        if type(stage.get("optional", False)) is not bool:
+            raise ScenarioError("Objective optional flag must be boolean")
+        for key in ("action_ids", "activate_after"):
+            values = stage.get(key, [])
+            _validate_string_list(values, "Objective actions")
+            if not set(values).issubset(presentation.get("public_action_ids", [])):
+                raise ScenarioError("Objective actions must be explicitly public")
+        if not stage.get("action_ids"):
+            raise ScenarioError("Objective stage needs an action")
+        seen_stages.add(stage["id"])
     events = data.get("events", [])
     if not isinstance(events, list):
         raise ScenarioError("Scenario events must be a list")

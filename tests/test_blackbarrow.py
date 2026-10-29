@@ -87,6 +87,36 @@ class BlackbarrowTests(unittest.TestCase):
         self.command("wait 6")
         self.assertIn("guard for the grain", " ".join(self.command("summary")["messages"]))
 
+    def test_delegation_phrases_and_stages_survive_resume_and_unfinished_end(self):
+        self.assertEqual([s["status"] for s in self.game.view()["guidance"]["stages"]], ["available"])
+        self.command("tell Matilda guide the high track")
+        stages = self.game.view()["guidance"]["stages"]
+        self.assertEqual([s["status"] for s in stages], ["completed", "available"])
+        self.assertTrue(stages[1]["optional"])
+        self.assertNotIn("action_ids", str(stages))
+        self.command("tell Horace don't secure what we leave behind")
+        self.assertEqual(self.game.view()["guidance"]["stages"][1]["status"], "available")
+        self.command("Captain Horace, could you secure what we leave behind?")
+        expected = self.game.view()["guidance"]["stages"]
+        self.assertEqual([s["status"] for s in expected], ["completed", "completed"])
+        self.game = RelayService(self.path)
+        self.assertEqual(self.game.view()["guidance"]["stages"], expected)
+        self.assertIn("completed", " ".join(self.command("objective")["messages"]))
+
+        self.path = Path(self.temp.name) / "unfinished.db"
+        self.game = RelayService(self.path, scenario="blackbarrow")
+        self.revision = 0
+        self.command("tell Matilda guide the high track")
+        self.command("wait 6")
+        self.assertEqual(self.game.view()["guidance"]["stages"][1]["status"], "not completed")
+
+    def test_authored_delegation_phrases_preserve_consent_boundaries(self):
+        from badbadger.engine.consent import requests_action
+        for phrase in ("guard the grain", "secure the grain", "protect the grain wagons"):
+            self.assertTrue(requests_action("Horace, " + phrase, "horace", "Captain Horace", "Arrange a guard for the grain", [phrase]))
+            for prefix in ("why should you ", "don't ", "if possible ", "explain "):
+                self.assertFalse(requests_action("Horace, " + prefix + phrase, "horace", "Captain Horace", "Arrange a guard for the grain", [phrase]))
+
     def test_scoped_examination_is_not_available_remotely_and_records_direct_evidence(self):
         view = self.game.view()
         self.assertNotIn("examine ridge markers", str(view["guidance"]["suggestions"]))
@@ -197,6 +227,19 @@ class BlackbarrowTests(unittest.TestCase):
             source = Path(self.temp.name) / "bad.json"
             source.write_text(json.dumps(malformed))
             destination = Path(self.temp.name) / "bad.db"
+            with self.assertRaises(ScenarioError):
+                load_scenario(source, destination)
+            self.assertFalse(destination.exists())
+
+        for change in ("cycle", "private_action", "bad_phrases"):
+            malformed = deepcopy(original)
+            if change == "cycle":
+                malformed["presentation"]["objective_stages"][0]["depends_on"] = "grain_security"
+            elif change == "private_action":
+                malformed["presentation"]["objective_stages"][0]["action_ids"] = ["unpublished_action"]
+            else:
+                malformed["npc_actions"][-1]["effects"]["request_phrases"] = [""]
+            source.write_text(json.dumps(malformed))
             with self.assertRaises(ScenarioError):
                 load_scenario(source, destination)
             self.assertFalse(destination.exists())

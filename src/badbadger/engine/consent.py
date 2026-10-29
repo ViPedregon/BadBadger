@@ -20,8 +20,10 @@ def request_body(text: str, npc_id: str, npc_name: str) -> str | None:
     return re.sub(r"\s+please$", "", text.rstrip(".!? "))
 
 
-def requests_action(text: str, npc_id: str, npc_name: str, label: str) -> bool:
-    return request_body(text, npc_id, npc_name) == " ".join(label.lower().split())
+def requests_action(text: str, npc_id: str, npc_name: str, label: str, request_phrases: list[str] = ()) -> bool:
+    body = request_body(text, npc_id, npc_name)
+    return body is not None and any(body == " ".join(phrase.lower().split())
+                                    for phrase in (label, *request_phrases))
 
 
 def requests_move(text: str, npc_id: str, npc_name: str, destinations: list[dict], target_id: str) -> bool:

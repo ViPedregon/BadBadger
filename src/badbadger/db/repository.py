@@ -500,6 +500,7 @@ class GameRepository:
                     "kind": "interact",
                     "label": row["label"],
                     "description": row["description"],
+                    "request_phrases": effects.get("request_phrases", []),
                     **decision,
                 })
         return actions

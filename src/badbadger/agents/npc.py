@@ -188,7 +188,7 @@ class DeterministicNPCBackend:
             (
                 action for action in context.available_actions
                 if action["kind"] == "interact"
-                and requests_action(player_input, context.npc_id, context.name, action["label"])
+                and requests_action(player_input, context.npc_id, context.name, action["label"], action.get("request_phrases", []))
             ),
             None,
         )
