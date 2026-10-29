@@ -250,7 +250,7 @@ as hearsay from the player.
 Scenario interactions may declare concise `observations`. When an interaction
 resolves, the deterministic engine stores that observation only for active NPCs
 at the interaction's location. NPC context retrieves at most eight memories,
-ordered by salience and then recency. Observation text is explicitly authored
+ranked by salience, topic overlap and recency. Observation text is explicitly authored
 as visible information; hidden fact payloads are never converted into memories
 or exposed automatically. Use `npc <name>` to inspect the resulting memory view.
 
@@ -322,7 +322,7 @@ To enable structured LLM dialogue through the OpenAI Responses API:
 ```powershell
 python -m pip install -e ".[openai]"
 $env:OPENAI_API_KEY = "your-api-key"
-$env:BADBADGER_OPENAI_MODEL = "gpt-5.6"  # optional override
+$env:BADBADGER_OPENAI_MODEL = "gpt-4.1-mini"  # optional override
 python -m badbadger.cli --save my-game.db
 ```
 
@@ -331,6 +331,9 @@ The client uses `responses.parse` with a strict Pydantic response model and
 backend if the API call still fails. The API receives only the filtered NPC
 context and exact player input; it cannot access SQLite or directly execute
 proposed actions.
+
+See [KNOWLEDGE.md](KNOWLEDGE.md) for current consent, source-quoted hearsay,
+conversation-memory and protected-information boundaries, including their limits.
 
 When OpenAI mode is enabled, unfamiliar player phrasing also goes through a
 separate structured intent interpreter. Familiar commands are still parsed

@@ -68,7 +68,7 @@ class ReactionDialogueTests(unittest.TestCase):
         self.assertEqual(status, "pending")
 
     def test_offline_goal_reaction_uses_first_person_without_internal_summary(self):
-        context = NPCContextBuilder(self.repository).build("lin")
+        context = NPCContextBuilder(self.repository).build("lin", interaction_mode="decision")
         response = DeterministicNPCBackend().respond(context, "ENGINE DECISION TICK")
         self.assertEqual(response.dialogue, "That is the outcome I hoped for.")
         self.assertEqual(response.proposed_actions[0].kind, "speak")

@@ -9,6 +9,8 @@ from badbadger.agents.npc import NPCBackend, NPCResponse
 from badbadger.db.repository import GameRepository
 from badbadger.engine.events import process_due_events
 from badbadger.engine.npc_actions import resolve_npc_proposal
+from badbadger.engine.consent import requests_action, requests_move
+from badbadger.engine.knowledge import grounded_claim, guard_response, inspection_request
 
 
 class DialogueService:
@@ -24,6 +26,8 @@ class DialogueService:
             return ["That person is unavailable."]
         if npc["location_id"] != player["location_id"]:
             return [f"{npc['name']} is not here."]
+        if inspection_request(player_input):
+            return [f'{npc["name"]}: "Ask me about the situation or what I believe. I cannot provide private records."']
 
         context = self.context_builder.build(npc_id, player_input)
         aftermath_question = bool(re.search(
@@ -37,6 +41,7 @@ class DialogueService:
         )
         response = self.backend.respond(context, player_input)
         self._validate_response(response)
+        response, protected_output = guard_response(self.repository, response)
         presented_dialogue = ("I haven't taken that action." if response.degraded and response.proposed_actions
                               else response.dialogue)
 
@@ -52,23 +57,35 @@ class DialogueService:
                     if proposal.kind == "interact" and not self._interaction_requested(
                         context.available_actions, proposal.parameters.get("action_id"),
                         player_input,
+                        npc_id, npc["name"],
                     ):
                         accepted = False
                         message = (
                             "(No consequential action was taken; explicitly request "
                             "the interaction if you want it performed.)"
                         )
+                    elif proposal.kind == "move" and not requests_move(
+                        player_input, npc_id, npc["name"], context.available_actions, proposal.parameters.get("target_id"),
+                    ):
+                        accepted, message = False, "No movement was requested; no action was taken."
                     else:
                         accepted,message=resolve_npc_proposal(
                             self.repository, npc_id, proposal, requested_by_player=True
                         )
                     proposal_results.append({"accepted":accepted,"proposal":proposal.__dict__})
-                    if proposal.kind == "interact" and not accepted:
+                    if proposal.kind in {"interact", "move"} and not accepted:
                         presented_dialogue = "I haven't taken that action."
                     if message:
                         event_messages.append(message)
                 belief_results = []
+                updated_beliefs = set()
                 for proposal in response.belief_updates:
+                    key = (proposal.subject_id, proposal.predicate)
+                    if key in updated_beliefs or not grounded_claim(self.repository, context, player_input, proposal):
+                        belief_results.append({"accepted": False, "reason": "No new grounded player assertion.",
+                                               "proposal": proposal.__dict__})
+                        continue
+                    updated_beliefs.add(key)
                     calibration = self.repository.hearsay_confidence(
                         npc_id, player["id"], proposal.confidence
                     )
@@ -87,14 +104,23 @@ class DialogueService:
                         ),
                     )
                     belief_results.append({
+                        "accepted": True,
                         "proposal": proposal.__dict__,
                         "calibration": calibration,
                     })
                 disclosure_results = []
+                requested_disclosures = set()
+                eligible_disclosures = {item["id"] for item in context.available_disclosures if item["eligible"]}
                 for proposal in response.disclosure_requests:
-                    accepted, message = self.repository.resolve_disclosure(
-                        npc_id, player["id"], proposal.disclosure_id
-                    )
+                    if proposal.disclosure_id in requested_disclosures:
+                        continue
+                    requested_disclosures.add(proposal.disclosure_id)
+                    if proposal.disclosure_id not in eligible_disclosures:
+                        accepted, message = False, "I don't know you well enough to discuss that."
+                    else:
+                        accepted, message = self.repository.resolve_disclosure(
+                            npc_id, player["id"], proposal.disclosure_id
+                        )
                     disclosure_results.append({
                         "accepted": accepted,
                         "disclosure_id": proposal.disclosure_id,
@@ -102,17 +128,19 @@ class DialogueService:
                     if message:
                         event_messages.append(f'{npc["name"]}: "{message}"')
                 relationship_results = []
+                updated_relationships = set()
                 visible_ids = {
                     character["id"] for character in context.visible_characters
                 }
                 for proposal in response.relationship_updates:
-                    if proposal.target_id not in visible_ids:
+                    if proposal.target_id not in visible_ids or proposal.target_id in updated_relationships:
                         relationship_results.append({
                             "accepted": False,
                             "proposal": proposal.__dict__,
-                            "reason": "Target is not visible to the NPC.",
+                            "reason": "Target is not visible or already updated this exchange.",
                         })
                         continue
+                    updated_relationships.add(proposal.target_id)
                     values = self.repository.adjust_relationship(
                         npc_id,
                         proposal.target_id,
@@ -127,11 +155,20 @@ class DialogueService:
                     })
                 # A successful exchange advances time, then normal events run.
                 self.repository.append_dialogue(npc_id, npc_id, presented_dialogue)
+                self.repository.add_memory(npc_id, npc["location_id"], "conversation",
+                    f'{player["name"]} said: "{player_input}"', salience=0.45,
+                    source_character_id=player["id"])
+                self.repository.add_memory(npc_id, npc["location_id"], "conversation",
+                    f'I said: "{presented_dialogue}"', salience=0.45,
+                    source_character_id=npc_id)
+                self.repository.add_memory(player["id"], player["location_id"], "conversation",
+                    f'{npc["name"]} said: "{presented_dialogue}"', salience=0.45,
+                    source_character_id=npc_id)
                 self.repository.advance_time(1)
                 event_messages.extend(process_due_events(self.repository))
             else:
                 self.repository.append_dialogue(npc_id, npc_id, presented_dialogue)
-                event_messages = [
+                event_messages = ["No action was taken."] if protected_output else [
                     "(AI dialogue was temporarily unavailable. This offline reply "
                     "did not advance time.)"
                 ]
@@ -142,6 +179,7 @@ class DialogueService:
                 result_data={
                     "dialogue": presented_dialogue,
                     "degraded": response.degraded,
+                    "protected_output_blocked": protected_output,
                     "biography_context": [
                         {
                             "id": item["id"],
@@ -165,6 +203,8 @@ class DialogueService:
         available_actions: list[dict[str, object]],
         action_id: object,
         player_input: str,
+        npc_id: str = "",
+        npc_name: str = "",
     ) -> bool:
         """Require the declared action label to appear in the player's own words."""
         action = next(
@@ -176,9 +216,7 @@ class DialogueService:
         )
         if action is None:
             return False
-        words = set(re.findall(r"[a-z0-9]+", player_input.lower()))
-        label_words = set(re.findall(r"[a-z0-9]+", str(action["label"]).lower()))
-        return bool(label_words) and label_words.issubset(words)
+        return requests_action(player_input, npc_id, npc_name, str(action["label"]))
 
     @staticmethod
     def _validate_response(response: NPCResponse) -> None:

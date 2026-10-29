@@ -210,3 +210,11 @@ and rendering HTML-like input as plain text. API checks cover authentication,
 origin/host checks, limits, private routes, duplicate submissions and safe errors.
 Remote HTTPS, a real host's persistent disk lifecycle, off-host backup scheduling,
 and live AI behavior are not established by these local tests.
+
+For conversation provenance, persistent recollection, explicit action consent,
+secret filtering and their remaining limitations, see [KNOWLEDGE.md](KNOWLEDGE.md).
+Existing saves retain their history; derived belief confidence is recalculated
+at startup so repeating one source's claim does not count as independent evidence.
+No new credentials or reset are required for this update. The automated suite
+uses simulated provider responses and does not establish universal secrecy or
+the consistency of every future live-model answer.

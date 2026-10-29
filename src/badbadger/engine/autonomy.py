@@ -6,6 +6,7 @@ from badbadger.agents.context import NPCContextBuilder
 from badbadger.agents.npc import NPCBackend
 from badbadger.db.repository import GameRepository
 from badbadger.engine.npc_actions import resolve_npc_proposal
+from badbadger.engine.knowledge import guard_response
 
 
 class AutonomyScheduler:
@@ -50,7 +51,7 @@ class AutonomyScheduler:
             if calls >= call_budget:
                 break
             calls += 1
-            context = self.context_builder.build(npc_id, "autonomous decision")
+            context = self.context_builder.build(npc_id, "autonomous decision", interaction_mode="decision")
             request = (
                 "ENGINE DECISION TICK: Based only on your goals and knowledge, "
                 "propose at most one useful action from available_actions. Copy its "
@@ -59,6 +60,7 @@ class AutonomyScheduler:
                 "dialogue as the exact short utterance the player will hear."
             )
             response = self.backend.respond(context, request)
+            response, protected_output = guard_response(self.repository, response)
             with self.repository.transaction():
                 results = []
                 if not response.degraded:
@@ -91,6 +93,7 @@ class AutonomyScheduler:
                     input_data={"event_id": event["id"]},
                     result_data={
                         "degraded": response.degraded,
+                        "protected_output_blocked": protected_output,
                         "proposals": results,
                         "decision_context": [
                             {

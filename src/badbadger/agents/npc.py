@@ -17,6 +17,7 @@ class BeliefProposal:
     predicate: str
     value: Any
     confidence: float
+    source_quote: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ class DeterministicNPCBackend:
 
     def respond(self, context: NPCContext, player_input: str) -> NPCResponse:
         lowered = player_input.lower()
-        if "engine decision tick" in lowered:
+        if context.interaction_mode == "decision":
             speech = next(
                 (
                     action for action in context.available_actions
@@ -225,7 +226,7 @@ class DeterministicNPCBackend:
             return NPCResponse(
                 "Understood. I'll remember that the lights in Room B are out.",
                 belief_updates=[
-                    BeliefProposal("room_b", "lights_on", False, confidence=0.7)
+                    BeliefProposal("room_b", "lights_on", False, confidence=0.7, source_quote=player_input)
                 ],
             )
 
@@ -259,7 +260,12 @@ class DeterministicNPCBackend:
                 wording = descriptions.get((belief["subject_id"], belief["predicate"]))
                 if wording is not None and isinstance(belief["value"], bool):
                     qualifier = "I believe" if belief["confidence"] >= 0.8 else "I'm not certain, but I think"
-                    lines.append(f"{qualifier} {wording[0 if belief['value'] else 1]}.")
+                    supporting = [item for item in belief.get("evidence", []) if item["value"] == belief["value"]]
+                    source = max(supporting, key=lambda item: (item["confidence"], item["id"]), default={})
+                    if source.get("source_type") == "hearsay":
+                        lines.append(f"I've been told that {wording[0 if belief['value'] else 1]}, but I haven't confirmed it.")
+                    else:
+                        lines.append(f"{qualifier} {wording[0 if belief['value'] else 1]}.")
             if lines:
                 return NPCResponse(" ".join(lines))
 

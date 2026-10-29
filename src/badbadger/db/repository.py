@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from importlib.resources import files
@@ -108,6 +109,10 @@ class GameRepository:
             )
             """
         )
+        # Recompute derived confidence using current evidence rules while
+        # retaining the complete append-only evidence history in existing saves.
+        for row in self.connection.execute("SELECT id FROM beliefs").fetchall():
+            self._resolve_belief(int(row["id"]))
         self.connection.commit()
 
     def initialize_simulation(self, scenario_id: str) -> None:
@@ -388,6 +393,37 @@ class GameRepository:
             for row in rows
         ]
 
+    def protected_belief(self, subject_id: str, predicate: str) -> bool:
+        return self.connection.execute(
+            "SELECT 1 FROM npc_disclosures WHERE subject_id=? AND predicate=? LIMIT 1",
+            (subject_id, predicate),
+        ).fetchone() is not None
+
+    def protected_texts(self) -> list[str]:
+        protected = []
+        for row in self.connection.execute("SELECT content,value_json FROM npc_disclosures"):
+            protected.append(row["content"])
+            value = json.loads(row["value_json"])
+            if isinstance(value, str) and len(value) >= 4:
+                protected.append(value)
+        protected.extend(row["summary"] for row in self.connection.execute(
+            "SELECT summary FROM character_biography_fragments WHERE visibility IN ('private','secret')"
+        ))
+        return protected
+
+    def contains_protected_text(self, text: str, *, protected: list[str] | None = None) -> bool:
+        """Catch literal/normalized echoes, not arbitrary semantic paraphrases.
+
+        Engine-controlled disclosure output deliberately bypasses this guard.
+        Numeric values alone are not blocked: doing so would censor ordinary
+        mission times without proving which secret a sentence refers to.
+        """
+        if protected is None:
+            protected = self.protected_texts()
+        normalized = " " + " ".join(re.findall(r"\w+", text.casefold())) + " "
+        return any(" " + " ".join(re.findall(r"\w+", secret.casefold())) + " " in normalized
+                   for secret in protected if secret.strip())
+
     def resolve_disclosure(
         self, character_id: str, recipient_id: str, disclosure_id: str
     ) -> tuple[bool, str]:
@@ -592,6 +628,8 @@ class GameRepository:
                 for item in self.beliefs_for(target["id"])
             }
             for belief in beliefs:
+                if self.protected_belief(belief["subject_id"], belief["predicate"]):
+                    continue
                 existing = target_beliefs.get(
                     (belief["subject_id"], belief["predicate"])
                 )
@@ -623,6 +661,8 @@ class GameRepository:
         predicate: str,
     ) -> tuple[bool, str]:
         """Validate and resolve one NPC-to-NPC information exchange."""
+        if self.protected_belief(subject_id, predicate):
+            return False, "That information requires an authorized disclosure."
         speaker = self.get_character(speaker_id)
         target = self.get_character(target_id)
         if (
@@ -958,6 +998,8 @@ class GameRepository:
         spoken = " ".join(utterance.split())
         if not spoken or len(spoken) > 500:
             return False, "The proposed speech is invalid."
+        if self.contains_protected_text(spoken):
+            return False, "That reaction cannot be spoken."
         self.connection.execute(
             "UPDATE npc_reaction_cues SET status='spoken',spoken_at=?,utterance=? "
             "WHERE id=? AND npc_id=? AND status='pending'",
@@ -1042,7 +1084,7 @@ class GameRepository:
             )
 
     def memories_for(
-        self, character_id: str, limit: int = 8
+        self, character_id: str, limit: int = 8, *, relevance_text: str = ""
     ) -> list[dict[str, Any]]:
         """Return a bounded deterministic view: salient first, newest on ties."""
         rows = self.connection.execute(
@@ -1054,9 +1096,16 @@ class GameRepository:
             ORDER BY salience DESC, game_time DESC, id DESC
             LIMIT ?
             """,
-            (character_id, limit),
+            (character_id, max(100, limit) if relevance_text else limit),
         ).fetchall()
-        return [dict(row) for row in rows]
+        memories = [dict(row) for row in rows]
+        if relevance_text:
+            tokens = {token for token in re.findall(r"\w+", relevance_text.lower()) if len(token) > 3}
+            memories.sort(key=lambda item: (
+                float(item["salience"]) + min(0.8, 0.15 * len(tokens & set(re.findall(r"\w+", item["summary"].lower())))),
+                item["game_time"], item["id"],
+            ), reverse=True)
+        return memories[:limit]
 
     def set_relationship(
         self,
@@ -1649,17 +1698,24 @@ class GameRepository:
         """Resolve contradictory evidence by score, then most-recent evidence."""
         rows = self.connection.execute(
             """
-            SELECT id, value_json, confidence FROM belief_evidence
+            SELECT id, value_json, confidence,source_type,source_character_id FROM belief_evidence
             WHERE belief_id = ? ORDER BY id
             """,
             (belief_id,),
         ).fetchall()
         candidates: dict[str, dict[str, float | int]] = {}
+        hearsay: dict[tuple, float] = {}
         for row in rows:
             candidate = candidates.setdefault(
                 row["value_json"], {"score": 0.0, "latest_id": 0}
             )
-            candidate["score"] = float(candidate["score"]) + float(row["confidence"])
+            score = float(row["confidence"])
+            if row["source_type"] == "hearsay":
+                key = (row["source_character_id"], row["value_json"])
+                previous = hearsay.get(key, 0.0)
+                hearsay[key] = max(previous, score)
+                score = max(0.0, score - previous)
+            candidate["score"] = float(candidate["score"]) + score
             candidate["latest_id"] = int(row["id"])
         winning_value, winner = max(
             candidates.items(),
