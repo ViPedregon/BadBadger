@@ -35,6 +35,14 @@ CREATE TABLE IF NOT EXISTS characters (
 CREATE UNIQUE INDEX IF NOT EXISTS one_player
 ON characters(kind) WHERE kind = 'player';
 
+CREATE TABLE IF NOT EXISTS character_identity (
+    character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+    identity_id TEXT NOT NULL UNIQUE,
+    revision INTEGER NOT NULL CHECK(revision > 0),
+    status TEXT NOT NULL CHECK(status IN ('awaiting_lore','draft','approved')),
+    snapshot_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS character_canon (
     character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
     role TEXT NOT NULL DEFAULT '',

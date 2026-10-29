@@ -30,6 +30,7 @@ HELP_TEXT = """You can type naturally. Useful examples:
   objective                    review your immediate purpose
   journal                      review facts and events you have learned
   people                       review the cast without revealing locations
+  self                         review your authored character background
   choices                      see a few contextual suggestions
   summary                      review the chapter after it ends
   timing                       learn which actions spend mission time
@@ -97,7 +98,7 @@ class GameApplication:
     def timing() -> list[str]:
         return ["Mission time advances when you travel, examine, wait, or have a successful conversation. "
                 "A conversation takes 1 minute; examining takes 2. Travel times appear in suggestions. "
-                "Reading look, objective, people, journal, choices, summary, help, or timing costs no time. "
+                "Reading look, objective, people, self, journal, choices, summary, help, or timing costs no time. "
                 "Other crew members can act as time advances. Closing the page does not advance time."]
 
     def suggested_commands(self) -> list[dict]:
@@ -212,6 +213,27 @@ class GameApplication:
             lines.append(f"{npc['name']} ({presence}){detail}")
         return ["\n".join(lines)]
 
+    def player_identity(self) -> dict:
+        player = self.repository.get_player()
+        canon = self.repository.character_canon(player["id"]) or {}
+        appearance = self.repository.appearance_for(player["id"], "character")
+        return {"name": player["name"], "role": canon.get("role") or appearance.get("role", ""),
+                "values": canon.get("values", []),
+                "background": [fragment["summary"] for fragment in canon.get("biography", [])
+                               if fragment["visibility"] == "public" and fragment["awareness"] == "conscious"
+                               and not self.repository.contains_protected_text(fragment["summary"])]}
+
+    def character_card(self) -> list[str]:
+        identity = self.player_identity()
+        lines = [f"You play {identity['name']}."]
+        if identity["role"]:
+            lines.append(identity["role"])
+        if identity["values"]:
+            lines.append("Values: " + ", ".join(identity["values"]))
+        lines.extend(identity["background"])
+        lines.append("Your choices and words remain yours; the game does not decide your thoughts for you.")
+        return ["\n".join(lines)]
+
     def chapter_summary(self) -> list[str]:
         if self.repository.simulation_status == "active":
             return ["The chapter is still unfolding. Keep investigating or make a choice."]
@@ -256,6 +278,8 @@ class GameApplication:
             return self.journal(), False
         if lowered in {"people", "characters", "cast", "who is here"}:
             return self.people(), False
+        if lowered in {"self", "my character", "who am i"}:
+            return self.character_card(), False
         if lowered in {"choices", "suggestions", "what can i do"}:
             return self.choices(), False
         if lowered in {"summary", "recap"}:

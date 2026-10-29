@@ -155,6 +155,10 @@ cannot pause the game clock or action loop.
 
 ### Character canon
 
+Reusable, revisioned identities are described in [CHARACTERS.md](CHARACTERS.md).
+Victor Gravenholt, Matilda Ash and Horace have name-only profiles awaiting the
+user's established lore. They are not replacements for the Relay Crisis cast.
+
 Characters may define durable authored identity separately from mission state:
 
 ```json

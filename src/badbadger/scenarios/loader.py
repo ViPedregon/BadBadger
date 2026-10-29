@@ -8,6 +8,7 @@ from typing import Any
 
 from badbadger.db.repository import GameRepository
 from badbadger.engine.simulation import SimulationEngine
+from badbadger.scenarios.identities import IdentityError, materialize_identities
 
 
 class ScenarioError(ValueError):
@@ -753,7 +754,7 @@ def _validate(data: dict[str, Any]) -> None:
             raise ScenarioError("Scheduled event cancellation_key must be text")
 
 
-def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
+def load_scenario(path: str | Path, database: str | Path, *, allow_unapproved_identities: bool = False) -> SimulationEngine:
     """Load a validated scenario atomically into a new SQLite save."""
     source = Path(path)
     try:
@@ -762,6 +763,10 @@ def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
         raise ScenarioError(f"Cannot read scenario {source}: {error}") from error
     if not isinstance(data, dict):
         raise ScenarioError("Scenario root must be an object")
+    try:
+        materialize_identities(data, source.parent, allow_unapproved=allow_unapproved_identities)
+    except IdentityError as error:
+        raise ScenarioError(str(error)) from error
     _load_character_dossiers(data, source.parent)
     scenario_id = _required(data, "scenario_id", str)
     _validate(data)
@@ -782,6 +787,8 @@ def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
                 repository.add_connection(item["from"], item["to"], item["minutes"])
             for item in characters:
                 repository.add_character(item["id"], item["kind"], item["name"], item["location_id"])
+                if item.get("_identity_snapshot") is not None:
+                    repository.set_character_identity(item["id"], item["_identity_snapshot"])
                 if item.get("appearance"):
                     repository.set_appearance(item["id"], "character", item["appearance"])
                 if item.get("canon") is not None:

@@ -92,7 +92,8 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/game", auth=self.auth).json()["revision"], 0)
 
     def test_private_files_and_inspection_unavailable(self):
-        for path in ("/docs", "/openapi.json", "/save.db", "/assets/relay_crisis.json", "/assets/schema.sql"):
+        for path in ("/docs", "/openapi.json", "/save.db", "/assets/relay_crisis.json", "/assets/schema.sql",
+                     "/assets/victor-gravenholt.json", "/characters/matilda-ash.json"):
             self.assertEqual(self.client.get(path, auth=self.auth).status_code, 404)
         result = self.post("npc Orr").json()
         self.assertIn("only in developer mode", " ".join(result["messages"]))

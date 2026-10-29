@@ -112,6 +112,12 @@ class BrowserTests(unittest.TestCase):
         self.page.locator('button[data-consequential="true"]').click()
         expect(self.page.locator("#notice")).to_contain_text("irreversible if accepted")
         expect(self.page.locator(".player")).to_have_count(0)
+        self.page.locator('button[data-command="self"]').click()
+        expect(self.page.locator("#command")).to_have_value("self")
+        self.page.locator("#send").click()
+        expect(self.page.locator("#notice")).to_have_text("Saved.")
+        expect(self.page.locator("#transcript")).to_contain_text("You play Player.")
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 0 minutes.")
 
     def test_lost_response_reload_and_retry_executes_once(self):
         def lose_response(route):

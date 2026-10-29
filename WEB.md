@@ -218,3 +218,8 @@ at startup so repeating one source's claim does not count as independent evidenc
 No new credentials or reset are required for this update. The automated suite
 uses simulated provider responses and does not establish universal secrecy or
 the consistency of every future live-model answer.
+
+**Your character** selects the time-free `self` command for the current player's
+public role card. Reusable identity profiles and saved revision behavior are
+documented in [CHARACTERS.md](CHARACTERS.md). The future named cast is not activated
+in Relay Crisis; its dossiers await the user's existing lore.

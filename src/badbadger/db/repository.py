@@ -196,6 +196,17 @@ class GameRepository:
         ).fetchone()
         return json.loads(row["details_json"]) if row else {}
 
+    def set_character_identity(self, character_id: str, profile: dict[str, Any]) -> None:
+        """Snapshot the authored profile only while seeding a new character."""
+        self.connection.execute(
+            "INSERT INTO character_identity(character_id,identity_id,revision,status,snapshot_json) VALUES (?,?,?,?,?)",
+            (character_id, profile["identity_id"], profile["revision"], profile["status"], json.dumps(profile, sort_keys=True)),
+        )
+
+    def character_identity(self, character_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute("SELECT snapshot_json FROM character_identity WHERE character_id=?", (character_id,)).fetchone()
+        return json.loads(row["snapshot_json"]) if row else None
+
     def set_character_canon(
         self, character_id: str, canon: dict[str, Any]
     ) -> None:

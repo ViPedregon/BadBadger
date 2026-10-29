@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "identity_id": "victor_gravenholt",
+  "revision": 1,
+  "status": "awaiting_lore",
+  "name": "Victor Gravenholt",
+  "kind": "player",
+  "canon": {"role": "", "voice": "", "values": [], "boundaries": [], "biography": []},
+  "personality": {},
+  "motivations": [],
+  "appearance": {},
+  "author_notes": "Only this name and player role are confirmed. Awaiting the user's existing lore; no background or personality has been invented."
+}

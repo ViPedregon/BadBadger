@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "identity_id": "horace",
+  "revision": 1,
+  "status": "awaiting_lore",
+  "name": "Horace",
+  "kind": "npc",
+  "canon": {"role": "", "voice": "", "values": [], "boundaries": [], "biography": []},
+  "personality": {},
+  "motivations": [],
+  "appearance": {},
+  "author_notes": "Only this name and NPC role are confirmed. Awaiting the user's existing lore; no background or personality has been invented."
+}

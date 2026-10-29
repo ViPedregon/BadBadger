@@ -72,6 +72,10 @@ class NPCContextBuilder:
             "values": canon["values"],
             "boundaries": canon["boundaries"],
         } if canon else {})
+        authored_profile = self.repository.character_identity(npc_id)
+        if authored_profile is not None:
+            identity["personality"] = authored_profile.get("personality", {})
+            identity["motivations"] = authored_profile.get("motivations", [])
         context = NPCContext(
             npc_id=npc_id,
             name=npc["name"],

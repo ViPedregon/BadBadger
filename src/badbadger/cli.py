@@ -32,7 +32,7 @@ INSTANT_COMMANDS = {
     "", "help", "?", "look", "look around", "status", "where am i",
     "objective", "mission", "goal", "choices", "suggestions",
     "what can i do", "timing", "journal", "notes", "knowledge", "what do i know",
-    "people", "characters", "cast", "who is here", "summary", "recap",
+    "people", "characters", "cast", "who is here", "self", "my character", "who am i", "summary", "recap",
     "quit", "exit", "q", "npc",
 }
 
