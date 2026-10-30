@@ -43,6 +43,14 @@ class NewGameRequest(BaseModel):
     scenario: Literal["relay_crisis", "blackbarrow"] | None = None
 
 
+class ResumeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    request_id: str = Field(min_length=1, max_length=128)
+    expected_revision: StrictInt = Field(ge=0)
+    archive_id: StrictInt = Field(ge=0)
+    confirmed: StrictBool
+
+
 class RateLimit:
     """Small bounded limiter for a single private instance, not a public gateway."""
 
@@ -181,6 +189,18 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
         limiter.check("turns", 60)
         try:
             return request.app.state.game.new_game(payload.request_id, payload.expected_revision, confirmed=payload.confirmed, scenario=payload.scenario)
+        except TurnConflict as error:
+            raise HTTPException(409, str(error)) from None
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from None
+        except sqlite3.OperationalError:
+            raise HTTPException(503, "Save is busy. Retry the same request.", headers={"Retry-After": "1"}) from None
+
+    @app.post("/api/resume", dependencies=[Depends(authenticated)])
+    def resume(payload: ResumeRequest, request: Request):
+        limiter.check("turns", 60)
+        try:
+            return request.app.state.game.resume_archive(payload.request_id, payload.expected_revision, payload.archive_id, confirmed=payload.confirmed)
         except TurnConflict as error:
             raise HTTPException(409, str(error)) from None
         except ValueError as error:

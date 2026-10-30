@@ -57,6 +57,8 @@ class RelayService:
             columns = {row["name"] for row in repository.connection.execute("PRAGMA table_info(player_session)")}
             if "game_start_revision" not in columns:
                 repository.connection.execute("ALTER TABLE player_session ADD COLUMN game_start_revision INTEGER NOT NULL DEFAULT 0")
+            if "restored_transcript_json" not in columns:
+                repository.connection.execute("ALTER TABLE player_session ADD COLUMN restored_transcript_json TEXT NOT NULL DEFAULT '[]'")
             columns = {row["name"] for row in repository.connection.execute("PRAGMA table_info(player_turns)")}
             if "operation" not in columns:
                 repository.connection.execute("ALTER TABLE player_turns ADD COLUMN operation TEXT NOT NULL DEFAULT 'turn'")
@@ -74,6 +76,98 @@ class RelayService:
             backend_label=self.backend_label, intent_interpreter=self.intent_interpreter,
             intent_label=self.intent_label, developer_mode=False,
         )
+
+    @staticmethod
+    def _transcript(repository, session):
+        return json.loads(session["restored_transcript_json"]) + [
+            {"command": row["command"], **json.loads(row["response_json"])}
+            for row in repository.connection.execute(
+                "SELECT command,response_json FROM player_turns WHERE revision>? ORDER BY revision",
+                (session["game_start_revision"],))]
+
+    @staticmethod
+    def _archive_list(repository):
+        # Never return raw archived state, private goals, or NPC context.
+        result = []
+        for row in repository.connection.execute(
+                "SELECT end_revision,saved_at,coalesce(json_extract(state_json,'$.scenario_id'), json_extract(state_json,'$.tables.simulation[0].scenario_id')) AS scenario_id "
+                "FROM playthrough_archives ORDER BY end_revision DESC"):
+            result.append({"id": row["end_revision"], "saved_at": row["saved_at"] + " UTC",
+                           "title": chapter(chapter_key(row["scenario_id"]))["title"]})
+        return result
+
+    def resume_archive(self, request_id: str, expected_revision: int, archive_id: int, *, confirmed=False):
+        """Swap engine snapshots atomically, preserving global receipts/revisions."""
+        if confirmed is not True:
+            raise ValueError("Confirm resuming an archived game first")
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise ValueError("Invalid request id")
+        if type(expected_revision) is not int or expected_revision < 0 or type(archive_id) is not int or archive_id < 0:
+            raise ValueError("Invalid revision or archive id")
+        with GameRepository(self.database) as repository:
+            with repository.transaction():
+                receipt = repository.connection.execute(
+                    "SELECT operation,response_json FROM player_turns WHERE request_id=?", (request_id,)).fetchone()
+                if receipt:
+                    previous = json.loads(receipt["response_json"])
+                    if receipt["operation"] != "resume" or previous.get("archive_id") != archive_id:
+                        raise TurnConflict("Request id already used for another operation")
+                    return previous
+                session = repository.connection.execute("SELECT * FROM player_session WHERE id=1").fetchone()
+                if session["revision"] != expected_revision:
+                    raise TurnConflict("Game changed; refresh before resuming")
+                row = repository.connection.execute(
+                    "SELECT state_json FROM playthrough_archives WHERE end_revision=?", (archive_id,)).fetchone()
+                if row is None:
+                    raise ValueError("Saved playthrough not found")
+                target = json.loads(row["state_json"])
+                selected_key = chapter_key(target.get("scenario_id") or target["tables"]["simulation"][0]["scenario_id"])
+                tables = [row[0] for row in repository.connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+                    "AND name NOT IN ('player_session','player_turns','playthrough_archives')")]
+                if set(target["tables"]) != set(tables):
+                    raise ValueError("This saved playthrough needs a schema migration before resuming")
+                def quoted(name):
+                    return '"' + name.replace('"', '""') + '"'
+                current = {table: [dict(row) for row in repository.connection.execute(f"SELECT * FROM {quoted(table)}")]
+                           for table in tables}
+                archive = {"tables": current, "scenario_id": repository.scenario_id,
+                           "opening": json.loads(session["opening_json"]),
+                           "start_revision": session["game_start_revision"], "end_revision": expected_revision,
+                           "transcript": self._transcript(repository, session)}
+                # Older archives predate transcript snapshots. Their immutable turn range is retained.
+                transcript = target.get("transcript")
+                if transcript is None:
+                    transcript = [{"command": row["command"], **json.loads(row["response_json"])}
+                                  for row in repository.connection.execute(
+                                      "SELECT command,response_json FROM player_turns WHERE revision>? AND revision<=? ORDER BY revision",
+                                      (target["start_revision"], target["end_revision"]))]
+                repository.connection.execute("INSERT INTO playthrough_archives(end_revision,state_json) VALUES (?,?)",
+                                              (expected_revision, json.dumps(archive)))
+                repository.connection.execute("PRAGMA defer_foreign_keys=ON")
+                for table in tables:
+                    repository.connection.execute(f"DELETE FROM {quoted(table)}")
+                for table in tables:
+                    allowed = {row["name"] for row in repository.connection.execute(f"PRAGMA table_info({quoted(table)})")}
+                    for record in target["tables"][table]:
+                        if not record or not set(record).issubset(allowed):
+                            raise ValueError("Unsupported saved playthrough columns")
+                        columns = ','.join(quoted(column) for column in record)
+                        placeholders = ','.join('?' for _ in record)
+                        repository.connection.execute(f"INSERT INTO {quoted(table)} ({columns}) VALUES ({placeholders})", tuple(record.values()))
+                if repository.connection.execute("PRAGMA foreign_key_check").fetchone():
+                    raise ValueError("Saved playthrough failed integrity checks")
+                revision = expected_revision + 1
+                response = {"revision": revision, "archive_id": archive_id, "scenario": selected_key,
+                            "messages": ["Saved playthrough resumed. Your previous game is archived."],
+                            "should_quit": False, "status": self._app(repository).status()}
+                repository.connection.execute(
+                    "UPDATE player_session SET revision=?,game_start_revision=?,opening_json=?,restored_transcript_json=? WHERE id=1",
+                    (revision, revision, json.dumps(target["opening"]), json.dumps(transcript)))
+                repository.connection.execute(
+                    "INSERT INTO player_turns(revision,request_id,command,response_json,operation) VALUES (?,?,?,?, 'resume')",
+                    (revision, request_id, "Resume saved playthrough", json.dumps(response)))
+                return response
 
     def view(self) -> dict:
         """Return only approved player output, never raw engine records."""
@@ -97,7 +191,8 @@ class RelayService:
                     "player": self._app(repository).player_identity(),
                     "opening": json.loads(session["opening_json"]),
                     "status": self._app(repository).status(),
-                    "transcript": [
+                    "archives": self._archive_list(repository),
+                    "transcript": json.loads(session["restored_transcript_json"]) + [
                         {"command": row["command"], **json.loads(row["response_json"])}
                         for row in turns
                     ],
@@ -195,7 +290,8 @@ class RelayService:
                         old = {table: [dict(row) for row in repository.connection.execute(f"SELECT * FROM {quoted(table)}")]
                                for table in tables}
                         archive = {"tables": old, "scenario_id": repository.scenario_id, "opening": json.loads(session["opening_json"]),
-                                   "start_revision": session["game_start_revision"], "end_revision": expected_revision}
+                                   "start_revision": session["game_start_revision"], "end_revision": expected_revision,
+                                   "transcript": self._transcript(repository, session)}
                         repository.connection.execute("INSERT INTO playthrough_archives(end_revision,state_json) VALUES (?,?)",
                                                       (expected_revision, json.dumps(archive)))
                         repository.connection.execute("PRAGMA defer_foreign_keys=ON")
@@ -213,7 +309,7 @@ class RelayService:
                 response = {"revision": revision, "scenario": selected_key, "messages": [f"New {selected['title']} game started."],
                             "should_quit": False, "status": self._app(repository).status()}
                 repository.connection.execute(
-                    "UPDATE player_session SET revision=?,game_start_revision=?,opening_json=? WHERE id=1",
+                    "UPDATE player_session SET revision=?,game_start_revision=?,opening_json=?,restored_transcript_json='[]' WHERE id=1",
                     (revision, revision, json.dumps(opening)),
                 )
                 repository.connection.execute(

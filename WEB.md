@@ -67,7 +67,7 @@ application does not invent missing knowledge from private history.
 
 New games keep the same login and AI configuration. The current page shows only
 the new playthrough's transcript; old engine state and turn history remain in
-the same SQLite save. There is no archive browser or restore button yet. Archives
+the same SQLite save. The Saved playthroughs panel can resume archived games. Archives
 are private server records and grow with use; they are not off-site backups.
 
 Choose the chapter in the selector beside New game. Fresh web-server saves default
@@ -77,6 +77,21 @@ previous playthrough. The existing Render save path can stay unchanged, even whe
 its filename is `relay.db`. This is chapter selection, not automatic campaign
 progression or restoration of an archived game.
 Back up the database before deploying this schema update or doing recovery work.
+Open **Saved playthroughs** above the story to see archived games by chapter,
+archive time (UTC), and save number. Choose Resume and confirm. Your current
+world and transcript are archived before the selected snapshot is restored.
+Resuming retains the chosen save's original scenario and character definitions;
+it does not apply newly authored chapter content. An ended chapter stays ended.
+There is one active game for this private instance, shared by everyone with its
+password; this is not yet a system of separate player accounts.
+
+Resume uses the same durable pending request, revision check and idempotent receipt
+as turns and New game. If its response is lost, **Retry resume** confirms the same
+swap without archiving twice. Stale tabs must refresh. Only public archive metadata
+and the normal player view are returned; raw snapshots have no download endpoint.
+Saves from incompatible engine schemas fail without replacing the active game.
+Archives are on the same disk and are not a substitute for offsite backups.
+
 If a new-game response is lost, use **Retry new game** to confirm the original
 request rather than starting over again. Other tabs must refresh before playing.
 

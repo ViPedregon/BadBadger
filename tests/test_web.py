@@ -45,6 +45,23 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.json(), {"status": "ok"})
         self.assertEqual(response.headers["cache-control"], "no-store")
 
+    def test_resume_archive_requires_auth_origin_confirmation_and_revision(self):
+        self.post("go to Relay Chamber")
+        self.client.post("/api/new-game", json={"request_id": "new", "expected_revision": 1, "confirmed": True}, auth=self.auth, headers=self.headers)
+        payload = {"request_id": "resume", "expected_revision": 2, "archive_id": 1, "confirmed": True}
+        self.assertEqual(self.client.post("/api/resume", json=payload, headers=self.headers).status_code, 401)
+        self.assertEqual(self.client.post("/api/resume", json=payload, auth=self.auth).status_code, 403)
+        self.assertEqual(self.client.post("/api/resume", json={**payload, "confirmed": False}, auth=self.auth, headers=self.headers).status_code, 400)
+        self.assertEqual(self.client.post("/api/resume", json={**payload, "archive_id": "../save.db"}, auth=self.auth, headers=self.headers).status_code, 422)
+        result = self.client.post("/api/resume", json=payload, auth=self.auth, headers=self.headers)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(self.client.post("/api/resume", json=payload, auth=self.auth, headers=self.headers).json(), result.json())
+        self.assertEqual(self.client.post("/api/resume", json={**payload, "request_id": "stale"}, auth=self.auth, headers=self.headers).status_code, 409)
+        view = self.client.get("/api/game", auth=self.auth).json()
+        self.assertEqual(len(view["transcript"]), 1)
+        self.assertEqual(len(view["archives"]), 2)
+        self.assertEqual(set(view["archives"][0]), {"id", "title", "saved_at"})
+
     def test_new_game_requires_auth_origin_confirmation_and_current_revision(self):
         payload = {"request_id": "reset", "expected_revision": 0, "confirmed": True}
         self.assertEqual(self.client.post("/api/new-game", json=payload, headers=self.headers).status_code, 401)

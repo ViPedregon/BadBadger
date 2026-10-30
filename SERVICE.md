@@ -51,7 +51,17 @@ This prevents stale tabs or retried resets from mutating the wrong playthrough.
 Startup migrates existing web saves with default values that preserve their
 transcripts. Archives live in `playthrough_archives`, not a public download route;
 old receipts still reference the archived playthrough's turn range. There is no
-archive-restoration UI, and local archives do not replace off-site backups.
+archive download route. The browser can list public metadata and resume a selected
+archive with confirmation. Local archives do not replace off-site backups.
+
+`resume_archive(request_id, expected_revision, archive_id, confirmed=True)` archives
+the current engine state and public transcript, then restores the selected engine
+snapshot and its transcript in the same transaction. The server supplies archive
+ids; callers cannot submit database paths or snapshot contents. Global receipts
+remain immutable and revisions increase across every swap. Older archives recover
+their transcript from the retained revision range. Incompatible table sets or
+invalid foreign keys cause a rollback. Resuming an ended game preserves its ended
+status, original authored chapter content and identity snapshots.
 
 The client should generate a request id once, retain it until it has received a
 response, and reuse it with the exact same command after a network timeout.

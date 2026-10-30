@@ -23,7 +23,8 @@ function controls() {
   refresh.disabled = busy;
   retry.hidden = pending === null;
   retry.disabled = busy;
-  retry.textContent = pending && pending.operation === "new-game" ? "Retry new game" : "Retry pending turn";
+  retry.textContent = pending && pending.operation === "resume" ? "Retry resume" : pending && pending.operation === "new-game" ? "Retry new game" : "Retry pending turn";
+  document.querySelectorAll("[data-archive]").forEach(button => { button.disabled = input.disabled; });
   newGame.disabled = input.disabled;
   chapterSelection.disabled = input.disabled;
   document.querySelectorAll("[data-command]").forEach(button => { button.disabled = input.disabled; });
@@ -90,6 +91,16 @@ async function load() {
       suggestions.append(button);
     });
   }
+  const archives = document.querySelector("#archives");
+  archives.replaceChildren();
+  (view.archives || []).forEach(archive => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.archive = archive.id;
+    button.textContent = `Resume ${archive.title} · ${archive.saved_at} · save ${archive.id}`;
+    archives.append(button);
+  });
+  if (!archives.children.length) archives.textContent = "No archived playthroughs yet.";
   transcript.replaceChildren();
   // Title and premise belong in the story; current objective, timing and
   // surroundings already have persistent panels above it.
@@ -110,9 +121,10 @@ async function submitPending() {
   controls();
   notice.textContent = "Working…";
   const startingNewGame = pending.operation === "new-game";
+  const resuming = pending.operation === "resume";
   const { operation, ...payload } = pending;
   try {
-    await request(startingNewGame ? "/api/new-game" : "/api/turn", {
+    await request(resuming ? "/api/resume" : startingNewGame ? "/api/new-game" : "/api/turn", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-BadBadger-Request": "turn" },
       body: JSON.stringify(payload),
@@ -120,12 +132,12 @@ async function submitPending() {
     clearPending();
     input.value = "";
     await load();
-    notice.textContent = startingNewGame ? "New game started. Your previous playthrough is archived." : "Saved.";
+    notice.textContent = resuming ? "Saved playthrough resumed. Your previous game is archived." : startingNewGame ? "New game started. Your previous playthrough is archived." : "Saved.";
   } catch (error) {
     if ([400, 409, 413, 422].includes(error.status)) {
       input.value = pending ? (pending.command || "") : input.value;
       clearPending();
-      notice.textContent = startingNewGame
+      notice.textContent = (startingNewGame || resuming)
         ? "The game changed. Review the saved game before starting over."
         : "Your turn was not submitted. Refresh the saved game, review it, then send again.";
       try { await load(); } catch (_) { /* The manual refresh remains available. */ }
@@ -161,6 +173,12 @@ newGame.addEventListener("click", () => {
   const title = chapterSelection.selectedOptions[0].textContent;
   if (!window.confirm(`Start a new ${title} game? Your current playthrough will be archived on the server. The new game begins at the start of the chapter.`)) return;
   persistAndSubmit({ operation: "new-game", request_id: crypto.randomUUID(), expected_revision: revision, confirmed: true, scenario: chapterSelection.value });
+});
+document.querySelector("#archives").addEventListener("click", event => {
+  const button = event.target.closest("button[data-archive]");
+  if (!button || busy || pending || revision === null || !storageAvailable) return;
+  if (!window.confirm(`Resume this saved playthrough? Your current game will be archived first.`)) return;
+  persistAndSubmit({ operation: "resume", request_id: crypto.randomUUID(), expected_revision: revision, archive_id: Number(button.dataset.archive), confirmed: true });
 });
 document.addEventListener("click", event => {
   const button = event.target.closest("button[data-command]");

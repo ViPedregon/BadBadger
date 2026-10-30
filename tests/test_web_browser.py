@@ -197,6 +197,37 @@ class BrowserTests(unittest.TestCase):
         for hidden in ("Alden", "Brenner", "Elena", "Valenbruck", "author_notes"):
             self.assertNotIn(hidden, public)
 
+    def test_archive_resume_cancel_and_lost_response_recovery(self):
+        self.command("go to Relay Chamber")
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator("#notice")).to_contain_text("New game started")
+        self.page.get_by_text("Saved playthroughs", exact=True).click()
+        button = self.page.locator("button[data-archive]").first
+        self.page.once("dialog", lambda dialog: dialog.dismiss())
+        button.click()
+        expect(self.page.locator(".player")).to_have_count(0)
+
+        def lose_response(route):
+            route.fetch()
+            route.abort("failed")
+        self.page.route("**/api/resume", lose_response)
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        button.click()
+        expect(self.page.locator("#notice")).to_contain_text("Connection interrupted")
+        self.page.unroute("**/api/resume")
+        self.page.reload()
+        expect(self.page.locator("#retry")).to_have_text("Retry resume")
+        self.page.locator("#retry").click()
+        expect(self.page.locator("#notice")).to_contain_text("Saved playthrough resumed")
+        expect(self.page.locator(".player")).to_have_count(1)
+        expect(self.page.locator("#status")).to_contain_text("Relay Chamber")
+        self.stop_server()
+        self.start_server()
+        self.page.reload()
+        expect(self.page.locator(".player")).to_have_count(1)
+        expect(self.page.locator("button[data-archive]")).to_have_count(2)
+
     def test_two_tabs_stale_turn_and_text_is_not_html(self):
         other = self.context.new_page()
         other.goto(self.origin)
