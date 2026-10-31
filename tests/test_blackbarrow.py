@@ -214,12 +214,12 @@ class BlackbarrowTests(unittest.TestCase):
             self.assertTrue(repository.beliefs_for("victor"))
 
     def test_invalid_scoped_observations_are_rejected_before_save_creation(self):
-        original = json.loads(files("badbadger.scenarios").joinpath("blackbarrow_north_road.json").read_text())
+        original = json.loads(files("badbadger.scenarios").joinpath("blackbarrow_north_road.json").read_text(encoding="utf-8"))
         # Use no identity references in this malformed fixture, so the specific
         # authoring error is what prevents creating the database.
         for actor in original["characters"]:
             identity = actor.pop("identity_file")
-            profile = json.loads(files("badbadger.scenarios").joinpath(identity).read_text())
+            profile = json.loads(files("badbadger.scenarios").joinpath(identity).read_text(encoding="utf-8"))
             actor["name"], actor["kind"] = profile["name"], profile["kind"]
         for field, value in (("location_id", "missing"), ("beliefs", "not-a-list")):
             malformed = deepcopy(original)

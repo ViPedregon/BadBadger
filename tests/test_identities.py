@@ -164,9 +164,7 @@ class IdentityTests(unittest.TestCase):
         outside = self.root.parent / (self.root.name + "-outside.json")
         outside.write_text(json.dumps(self.guide))
         self.addCleanup(outside.unlink)
-        link = self.root / "escape.json"
-        link.symlink_to(outside)
-        for reference in (outside, Path("../") / outside.name, Path("escape.json")):
+        for reference in (outside, Path("../") / outside.name):
             with self.subTest(reference=str(reference)), self.assertRaises(IdentityError):
                 load_identity(reference, self.root)
         duplicate = deepcopy(self.scenario)
@@ -179,6 +177,20 @@ class IdentityTests(unittest.TestCase):
             (self.root / "bad.json").write_text(json.dumps(profile))
             with self.subTest(traits=traits), self.assertRaises(IdentityError):
                 load_identity(Path("bad.json"), self.root)
+
+    def test_symlink_cannot_escape_identity_directory(self):
+        outside = self.root.parent / (self.root.name + "-outside.json")
+        outside.write_text(json.dumps(self.guide))
+        self.addCleanup(outside.unlink)
+        link = self.root / "escape.json"
+        try:
+            link.symlink_to(outside)
+        except OSError as error:
+            if getattr(error, "winerror", None) == 1314:
+                self.skipTest("Windows test process lacks symbolic-link creation privilege")
+            raise
+        with self.assertRaises(IdentityError):
+            load_identity(Path("escape.json"), self.root)
 
     def test_relay_crisis_remains_separate_and_player_card_is_read_only(self):
         service = RelayService(self.root / "relay.db")

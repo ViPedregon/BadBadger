@@ -21,6 +21,13 @@
 6. **Prepare external testing:** offsite backups with a restore drill, monitoring,
    AI usage/cost controls, feedback collection and isolated tester saves/access.
    Local backup tooling exists; operational deployment of these is not verified.
+   Windows backup/restore and the HTTP, AI-adapter and real-browser acceptance
+   checks have now been exercised locally. Cross-platform CI is defined in
+   `.github/workflows/beta-checks.yml`; hosted execution is pending a push.
+   See TESTING.md for dependencies and the remaining optional deployment drill.
+   Optional server-configured tester accounts now have independent saves,
+   archives, retry receipts and browser pending requests. See WEB.md for setup;
+   deployment, offsite backup coverage and credential distribution remain pending.
 7. **Small closed beta:** observe real sessions and improve confusing interactions
    before extending the campaign or adding arbitrary task planning.
 

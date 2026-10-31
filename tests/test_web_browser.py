@@ -22,9 +22,14 @@ except ImportError:
 CHROMIUM = shutil.which("chromium") or shutil.which("chromium-browser")
 
 
-@unittest.skipUnless(sync_playwright and CHROMIUM, "Install .[web,web-test] and system Chromium for browser checks")
+@unittest.skipUnless(sync_playwright, "Install .[web,web-test] for browser checks")
 class BrowserTests(unittest.TestCase):
     def setUp(self):
+        self.playwright = sync_playwright().start()
+        self.addCleanup(self.playwright.stop)
+        executable = CHROMIUM or self.playwright.chromium.executable_path
+        if not Path(executable).is_file():
+            self.skipTest("Run python -m playwright install chromium for browser checks")
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.save = Path(self.temp.name) / "relay.db"
@@ -37,9 +42,7 @@ class BrowserTests(unittest.TestCase):
         self.process = None
         self.addCleanup(self.stop_server)
         self.start_server()
-        self.playwright = sync_playwright().start()
-        self.addCleanup(self.playwright.stop)
-        self.browser = self.playwright.chromium.launch(executable_path=CHROMIUM, args=["--no-sandbox"])
+        self.browser = self.playwright.chromium.launch(executable_path=executable, args=["--no-sandbox"])
         self.addCleanup(self.browser.close)
         self.context = self.browser.new_context(http_credentials={"username": "victor", "password": self.password})
         self.page = self.context.new_page()
@@ -48,7 +51,8 @@ class BrowserTests(unittest.TestCase):
 
     def start_server(self):
         self.process = subprocess.Popen(
-            [sys.executable, "-m", "badbadger.web", "--offline", "--scenario", "relay_crisis", "--save", str(self.save), "--port", str(self.port)],
+            [sys.executable, "-m", "badbadger.web", "--offline", "--scenario", "relay_crisis", "--save", str(self.save), "--port", str(self.port),
+             *getattr(self, "extra_server_args", [])],
             env={**os.environ, "BADBADGER_WEB_PASSWORD": self.password, "BADBADGER_WEB_ORIGIN": self.origin},
             stdout=self.log, stderr=self.log,
         )
@@ -241,3 +245,41 @@ class BrowserTests(unittest.TestCase):
         self.assertFalse(self.page.evaluate("Boolean(window.badbadgerInjected)"))
         expect(self.page.locator("#transcript img")).to_have_count(0)
         expect(self.page.locator("#transcript")).to_contain_text("<img src=x")
+
+    def test_tester_browser_pending_requests_and_saves_are_isolated(self):
+        import json
+        from badbadger.testers import tester_scope
+
+        self.stop_server()
+        accounts = {"alice": "a" * 32, "bob": "b" * 32}
+        config = Path(self.temp.name) / "testers.json"
+        config.write_text(json.dumps(accounts), encoding="utf-8")
+        self.extra_server_args = ["--testers", str(config), "--tester-save-dir", str(Path(self.temp.name) / "players")]
+        self.start_server()
+        self.context.close()
+        self.context = self.browser.new_context(http_credentials={"username": "alice", "password": accounts["alice"]})
+        self.page = self.context.new_page()
+        self.page.goto(self.origin)
+        expect(self.page.locator("#command")).to_be_enabled()
+        self.command("go to Relay Chamber")
+        self.page.evaluate("""scope => localStorage.setItem('badbadger.pending-turn.v1.' + scope,
+            JSON.stringify({request_id:'pending-alice', command:'wait 1', expected_revision:1}))""", tester_scope("alice"))
+        def sign_in(user):
+            storage = self.context.storage_state()
+            self.context.close()
+            self.context = self.browser.new_context(storage_state=storage,
+                http_credentials={"username": user, "password": accounts[user]})
+            self.page = self.context.new_page()
+            self.page.goto(self.origin)
+
+        sign_in("bob")
+        expect(self.page.locator("#command")).to_be_enabled()
+        expect(self.page.locator("#retry")).to_be_hidden()
+        expect(self.page.locator(".player")).to_have_count(0)
+        self.command("wait 2")
+        sign_in("alice")
+        expect(self.page.locator("#retry")).to_be_visible()
+        expect(self.page.locator(".player")).to_have_count(1)
+        self.page.locator("#retry").click()
+        expect(self.page.locator("#notice")).to_have_text("Saved.")
+        expect(self.page.locator(".player")).to_have_count(2)

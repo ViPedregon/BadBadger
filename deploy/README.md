@@ -71,6 +71,9 @@ SQLite state using the online backup API, checks database integrity and foreign
 keys, and checks the web save's revision against its turn receipts. It writes a
 private new file and **never overwrites** a destination. Both operations use the
 same verified-copy routine: restore always produces a new candidate save.
+The copy commands also work on Windows for local recovery drills. Files are
+flushed before publication; POSIX additionally syncs the destination directory.
+Windows publication uses a rename that fails if the destination already exists.
 
 For example, from a Render shell with the service's persistent disk mounted:
 

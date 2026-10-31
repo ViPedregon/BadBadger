@@ -1,10 +1,12 @@
 """Verify recoverable game state, live-WAL capture and safe copy failures."""
 
 from pathlib import Path
+from contextlib import closing
 import os
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from badbadger.backup import snapshot
 from badbadger.service import RelayService
@@ -66,8 +68,24 @@ class BackupTests(unittest.TestCase):
 
     def test_unrelated_database_is_rejected(self):
         source = self.root / "other.db"
-        with sqlite3.connect(source) as connection:
+        with closing(sqlite3.connect(source)) as connection:
             connection.execute("CREATE TABLE other (id INTEGER)")
+            connection.commit()
         with self.assertRaises(sqlite3.Error):
             snapshot(source, self.root / "output.db")
         self.assertFalse((self.root / "output.db").exists())
+
+    def test_destination_created_during_snapshot_is_preserved(self):
+        destination = self.root / "racing.db"
+        operation = "rename" if os.name == "nt" else "link"
+        publish = getattr(os, operation)
+
+        def create_competing_file(source, target):
+            Path(target).write_bytes(b"another backup won")
+            return publish(source, target)
+
+        with patch(f"badbadger.backup.os.{operation}", side_effect=create_competing_file):
+            with self.assertRaises(FileExistsError):
+                snapshot(self.save, destination)
+        self.assertEqual(destination.read_bytes(), b"another backup won")
+        self.assertEqual(list(self.root.glob(".badbadger-*")), [])

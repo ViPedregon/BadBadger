@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+import json
 import logging
 import os
 from pathlib import Path
@@ -22,6 +23,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from badbadger.service import RelayService, TurnConflict
+from badbadger.testers import load_testers, validate_testers, tester_scope
 from badbadger.scenarios.catalog import CHAPTERS
 
 logger = logging.getLogger(__name__)
@@ -74,7 +76,8 @@ class RateLimit:
             entries.append(now)
 
 
-def create_app(database: str | Path, password: str, origin: str, *, offline: bool = False, scenario: str = "relay_crisis") -> FastAPI:
+def create_app(database: str | Path, password: str, origin: str, *, offline: bool = False, scenario: str = "relay_crisis",
+               testers: dict[str, str] | None = None, tester_save_dir: str | Path | None = None) -> FastAPI:
     """Create one private game. These arguments are server configuration only."""
     parsed = urlsplit(origin)
     if (parsed.scheme not in {"https", "http"} or not parsed.hostname
@@ -83,13 +86,26 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
         raise ValueError("Origin must be an exact http(s) origin without a trailing slash")
     if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("Remote browser access requires HTTPS")
-    if not isinstance(password, str) or len(password) < 24:
+    if testers is None and (not isinstance(password, str) or len(password) < 24):
         raise ValueError("Set a web password of at least 24 characters")
+    accounts = validate_testers(testers) if testers is not None else None
+    if accounts is not None and tester_save_dir is None:
+        raise ValueError("Tester mode requires a persistent tester save directory")
     limiter = RateLimit()
 
     @asynccontextmanager
     async def lifespan(app):
-        app.state.game = RelayService(database, offline=offline, scenario=scenario)
+        if accounts is None:
+            app.state.game = RelayService(database, offline=offline, scenario=scenario)
+        else:
+            root = Path(tester_save_dir).resolve()
+            root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            app.state.games = {}
+            for username in accounts:
+                target = root / (tester_scope(username) + ".db")
+                if target.is_symlink():
+                    raise ValueError("Tester save cannot be a symbolic link")
+                app.state.games[username] = RelayService(target, offline=offline, scenario=scenario)
         yield
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -142,15 +158,19 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
         return response
 
     def authenticated(request: Request, credentials: HTTPBasicCredentials | None = Depends(security)):
-        valid = (
-            credentials is not None
-            and secrets.compare_digest(credentials.username.encode(), b"victor")
-            and secrets.compare_digest(credentials.password.encode(), password.encode())
-        )
+        username = credentials.username if credentials else ""
+        expected = accounts.get(username) if accounts is not None else password if username == "victor" else None
+        valid = credentials is not None and expected is not None and secrets.compare_digest(
+            credentials.password.encode(), expected.encode())
         if not valid:
             address = request.client.host if request.client else "unknown"
             limiter.check("auth:" + address, 20)
             raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": 'Basic realm="BadBadger"'})
+        request.state.player_scope = tester_scope(username) if accounts is not None else None
+        request.state.game = request.app.state.games[username] if accounts is not None else request.app.state.game
+        if (accounts is not None and request.method == "POST"
+                and request.headers.get("x-badbadger-player") != request.state.player_scope):
+            raise HTTPException(409, "Player changed. Reload before submitting.")
 
     @app.get("/healthz")
     def health():
@@ -159,24 +179,27 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
 
     @app.get("/", dependencies=[Depends(authenticated)])
     def index():
-        return Response(files("badbadger").joinpath("static/index.html").read_text(), media_type="text/html")
+        return Response(files("badbadger").joinpath("static/index.html").read_text(encoding="utf-8"), media_type="text/html")
 
     @app.get("/assets/{name}", dependencies=[Depends(authenticated)])
-    def asset(name: str):
+    def asset(name: str, request: Request):
         allowed = {"app.js": "text/javascript", "style.css": "text/css"}
         if name not in allowed:
             raise HTTPException(404, "Not found")
-        return Response(files("badbadger").joinpath("static", name).read_text(), media_type=allowed[name])
+        content = files("badbadger").joinpath("static", name).read_text(encoding="utf-8")
+        if name == "app.js" and request.state.player_scope:
+            content = content.replace("const playerScope = null;", "const playerScope = " + json.dumps(request.state.player_scope) + ";")
+        return Response(content, media_type=allowed[name])
 
     @app.get("/api/game", dependencies=[Depends(authenticated)])
     def game(request: Request):
-        return request.app.state.game.view()
+        return request.state.game.view()
 
     @app.post("/api/turn", dependencies=[Depends(authenticated)])
     def turn(payload: TurnRequest, request: Request):
-        limiter.check("turns", 60)
+        limiter.check("turns:" + (request.state.player_scope or "default"), 60)
         try:
-            return request.app.state.game.submit(payload.request_id, payload.command, payload.expected_revision)
+            return request.state.game.submit(payload.request_id, payload.command, payload.expected_revision)
         except TurnConflict as error:
             raise HTTPException(409, str(error)) from None
         except ValueError as error:
@@ -186,9 +209,9 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
 
     @app.post("/api/new-game", dependencies=[Depends(authenticated)])
     def new_game(payload: NewGameRequest, request: Request):
-        limiter.check("turns", 60)
+        limiter.check("turns:" + (request.state.player_scope or "default"), 60)
         try:
-            return request.app.state.game.new_game(payload.request_id, payload.expected_revision, confirmed=payload.confirmed, scenario=payload.scenario)
+            return request.state.game.new_game(payload.request_id, payload.expected_revision, confirmed=payload.confirmed, scenario=payload.scenario)
         except TurnConflict as error:
             raise HTTPException(409, str(error)) from None
         except ValueError as error:
@@ -198,9 +221,9 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
 
     @app.post("/api/resume", dependencies=[Depends(authenticated)])
     def resume(payload: ResumeRequest, request: Request):
-        limiter.check("turns", 60)
+        limiter.check("turns:" + (request.state.player_scope or "default"), 60)
         try:
-            return request.app.state.game.resume_archive(payload.request_id, payload.expected_revision, payload.archive_id, confirmed=payload.confirmed)
+            return request.state.game.resume_archive(payload.request_id, payload.expected_revision, payload.archive_id, confirmed=payload.confirmed)
         except TurnConflict as error:
             raise HTTPException(409, str(error)) from None
         except ValueError as error:
@@ -220,7 +243,11 @@ def main():
     parser.add_argument("--offline", action="store_true", help="disable AI calls even when an API key is configured")
     parser.add_argument("--scenario", choices=tuple(CHAPTERS), default=os.environ.get("BADBADGER_SCENARIO", "blackbarrow"),
                         help="chapter for a fresh save; existing saves always resume")
+    parser.add_argument("--testers", type=Path, help="private server-owned JSON username/password mapping")
+    parser.add_argument("--tester-save-dir", type=Path, help="persistent directory for isolated tester saves")
     args = parser.parse_args()
+    if bool(args.testers) != bool(args.tester_save_dir):
+        parser.error("--testers and --tester-save-dir must be supplied together")
     # New saves and SQLite sidecar files should be private on hosted instances.
     os.umask(0o077)
     password = os.environ.get("BADBADGER_WEB_PASSWORD", "")
@@ -228,7 +255,8 @@ def main():
     try:
         if args.host not in {"127.0.0.1", "localhost", "::1"} and urlsplit(origin).scheme != "https":
             raise ValueError("A public/container bind requires an explicitly configured HTTPS origin")
-        app = create_app(args.save, password, origin, offline=args.offline, scenario=args.scenario)
+        app = create_app(args.save, password, origin, offline=args.offline, scenario=args.scenario,
+                         testers=load_testers(args.testers) if args.testers else None, tester_save_dir=args.tester_save_dir)
     except ValueError as error:
         parser.error(str(error))
     # An HTTPS reverse proxy can forward to this loopback-only listener.

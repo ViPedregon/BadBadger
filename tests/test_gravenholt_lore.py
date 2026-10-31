@@ -20,8 +20,8 @@ class GravenholtLoreTests(unittest.TestCase):
         resource = files("badbadger.scenarios").joinpath("characters")
         self.profiles = {}
         for filename in ("victor-gravenholt", "matilda-ash", "horace"):
-            raw = resource.joinpath(filename + ".json").read_text()
-            (self.root / "characters" / (filename + ".json")).write_text(raw)
+            raw = resource.joinpath(filename + ".json").read_text(encoding="utf-8")
+            (self.root / "characters" / (filename + ".json")).write_text(raw, encoding="utf-8")
             self.profiles[filename] = json.loads(raw)
         scenario = {"scenario_id": "lore-integration-test", "locations": [
             {"id": "room", "name": "Test Room", "description": "A noncanonical test scene."}],
@@ -97,7 +97,7 @@ class GravenholtLoreTests(unittest.TestCase):
         self.assertEqual(len(self.engine.repository.characters_at("room")), 3)
         for character in ("victor", "matilda", "horace"):
             self.assertEqual(self.engine.repository.memories_for(character), [])
-        ledger = json.loads((Path(__file__).resolve().parents[1] / "lore/house-gravenholt.json").read_text())
+        ledger = json.loads((Path(__file__).resolve().parents[1] / "lore/house-gravenholt.json").read_text(encoding="utf-8"))
         self.assertEqual(ledger["continuity"]["romance"]["milestones"], [])
         self.assertEqual(ledger["continuity"]["later_adventure"]["introduces"], "Elena")
         self.assertIsNone(ledger["unresolved"]["horace_surname"]["selected"])

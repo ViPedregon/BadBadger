@@ -83,7 +83,46 @@ world and transcript are archived before the selected snapshot is restored.
 Resuming retains the chosen save's original scenario and character definitions;
 it does not apply newly authored chapter content. An ended chapter stays ended.
 There is one active game for this private instance, shared by everyone with its
-password; this is not yet a system of separate player accounts.
+password by default. Optional closed-beta tester mode provides separate saves
+as described below.
+
+## Isolated closed-beta testers
+
+The server can load up to 32 preconfigured tester accounts from a private JSON
+file mapping lowercase usernames to independently generated passwords (at least
+24 characters each). Keep this file outside the checkout and web assets, readable
+only by the service account. Do not commit it or paste real credentials in chat.
+There is no public registration or account-management endpoint.
+
+Supply both options when starting the server:
+
+```sh
+badbadger-web --save /private/saves/legacy.db \
+  --testers /private/config/testers.json \
+  --tester-save-dir /private/saves/testers
+```
+
+In tester mode, `--save` is retained for launcher compatibility but is not opened;
+the existing shared save stays separate. Each tester signs in with their own
+username/password and receives a separate SQLite file in `--tester-save-dir`.
+Filenames are SHA-256 hashes of usernames followed by `.db`; renaming an account
+therefore selects a different save. Password rotation preserves the save. Restart
+the service after changing the credential file. Removing an account revokes its
+access after restart but does not delete its save.
+
+Turns, retry receipts, archives, archive resume and turn rate limits are isolated
+per tester. Pending browser requests use separate local-storage keys; requests
+from a tab whose authenticated account changed are rejected until reloaded.
+This is a small trusted beta, with one process and one worker, not a public
+multi-user platform. Browser Basic authentication has no application logout;
+separate browser profiles are convenient when testing multiple accounts.
+
+Place the tester directory on persistent storage. Back up **each** `.db` file
+using `badbadger-save` and copy verified snapshots to private offsite storage.
+The existing hourly backup template covers only its single configured save;
+it does not automatically discover tester databases. Credentials require their
+own secure retention/rotation process. The Render Blueprint still launches the
+shared-save mode until its start command is explicitly configured for testers.
 
 Resume uses the same durable pending request, revision check and idempotent receipt
 as turns and New game. If its response is lost, **Retry resume** confirms the same

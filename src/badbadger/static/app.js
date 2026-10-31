@@ -1,4 +1,5 @@
 "use strict";
+const playerScope = null;
 const form = document.querySelector("#command-form");
 const input = document.querySelector("#command");
 const send = document.querySelector("#send");
@@ -9,7 +10,7 @@ const chapterSelection = document.querySelector("#chapter-selection");
 let loadedScenario = null;
 const notice = document.querySelector("#notice");
 const transcript = document.querySelector("#transcript");
-const pendingKey = "badbadger.pending-turn.v1";
+const pendingKey = "badbadger.pending-turn.v1" + (playerScope ? `.${playerScope}` : "");
 let revision = null;
 let pending = null;
 let busy = false;
@@ -126,7 +127,7 @@ async function submitPending() {
   try {
     await request(resuming ? "/api/resume" : startingNewGame ? "/api/new-game" : "/api/turn", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-BadBadger-Request": "turn" },
+      headers: { "Content-Type": "application/json", "X-BadBadger-Request": "turn", ...(playerScope ? { "X-BadBadger-Player": playerScope } : {}) },
       body: JSON.stringify(payload),
     });
     clearPending();

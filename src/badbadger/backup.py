@@ -42,14 +42,23 @@ def snapshot(source: str | Path, destination: str | Path) -> Path:
                     raise ValueError("Web save revision and transcript disagree")
         # Flush before exposing the backup and never replace an existing file,
         # even if another process creates it while this snapshot is being made.
-        with temporary.open("rb") as file:
+        # Windows requires a writable descriptor for FlushFileBuffers (fsync).
+        with temporary.open("r+b") as file:
             os.fsync(file.fileno())
-        os.link(temporary, destination)
-        directory = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        if os.name == "nt":
+            # Windows rename fails if the destination exists, including races,
+            # and avoids requiring hard-link privileges in restricted accounts.
+            os.rename(temporary, destination)
+        else:
+            os.link(temporary, destination)
+        # POSIX supports syncing directory entries; Windows exposes no portable
+        # directory fsync through os.open. The file itself is flushed above.
+        if os.name == "posix":
+            directory = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
         return destination
     finally:
         if temporary is not None:
