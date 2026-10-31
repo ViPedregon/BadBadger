@@ -119,8 +119,9 @@ separate browser profiles are convenient when testing multiple accounts.
 
 Place the tester directory on persistent storage. Back up **each** `.db` file
 using `badbadger-save` and copy verified snapshots to private offsite storage.
-The existing hourly backup template covers only its single configured save;
-it does not automatically discover tester databases. Credentials require their
+The hourly backup helper supports tester directories with `--testers --source
+/private/saves/testers --backup-dir /private/backups`; configure its service
+command explicitly. Credentials require their
 own secure retention/rotation process. The Render Blueprint still launches the
 shared-save mode until its start command is explicitly configured for testers.
 

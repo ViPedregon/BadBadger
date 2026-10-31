@@ -105,6 +105,50 @@ verified recovered copy. Never replace a live database or combine old WAL/SHM
 files with a recovered main file. Resume writes only after checking the game.
 Read-only integrity checks alone do not prove gameplay recovery.
 
+### Back up and recover all tester saves
+
+Use a new destination directory for every batch:
+
+```sh
+badbadger-save backup-testers --source /private/saves/testers \
+  --destination /private/backups/testers-UNIQUE-TIMESTAMP
+badbadger-save restore-testers --source /private/backups/testers-UNIQUE-TIMESTAMP \
+  --destination /private/recovery/testers-UNIQUE-TIMESTAMP
+```
+
+Backup includes every hashed tester `.db` filename, including accounts removed
+from the credential file. It rejects unexpected database names and symlinks.
+Each database is captured with SQLite's online backup API, so committed WAL
+changes are included. Players' snapshots may represent different instants;
+there is no shared world requiring a simultaneous batch transaction.
+
+`manifest.json` is written only after all saves pass validation and the source
+inventory is rechecked. It records filenames, SHA-256 checksums and revisions,
+without passwords or usernames. Only batches with that manifest are complete.
+Transfer the **entire batch directory** to private encrypted offsite storage.
+Checksums detect accidental corruption; they do not authenticate untrusted data.
+No upload, retention policy or automatic deletion is configured by this command.
+
+Restore checks the manifest, inventory and checksums before creating a new
+directory, then validates each copied save and its revision. Existing directories
+are never overwritten. A failure can leave a partial new directory; do not
+activate it, and retry into a new destination. Keep the service stopped during
+actual recovery, retain its old saves, and change `--tester-save-dir` to the
+successfully restored directory. Rehearse login, transcript, archive resume and
+the next turn before returning the recovered service to testers. Credentials
+must be retained separately; the save batch does not contain the account file.
+
+For the hourly systemd job, use an override for `ExecStart` to call:
+
+```sh
+/opt/badbadger/venv/bin/python /opt/badbadger/deploy/hourly_backup.py \
+  --testers --source /var/lib/badbadger/testers \
+  --backup-dir /var/lib/badbadger/backups
+```
+
+The helper's default remains the existing single shared save. Enable the timer
+only after arranging offsite copying, failure alerts and disk-space monitoring.
+
 ## Alternative: Linux VPS
 
 The checked-in templates assume:
