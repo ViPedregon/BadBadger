@@ -973,9 +973,9 @@ class VerticalSliceTests(unittest.TestCase):
                 if belief["subject_id"] == "room_b"
             )
             self.assertTrue(resolved["value"])
-            # Supporting evidence totals .75, then resolution discounts it by
-            # the remaining .30 of contrary evidence.
-            self.assertAlmostEqual(resolved["confidence"], 0.75 / 1.3)
+            # A repeat from the same speaker is not independent corroboration.
+            # Their strongest contribution is .60, opposed by the initial .30.
+            self.assertAlmostEqual(resolved["confidence"], 0.6 / 1.3)
             engine.repository.close()
 
     def test_conflicting_npc_information_damages_trust_without_forcing_belief(self):
@@ -1504,6 +1504,7 @@ class VerticalSliceTests(unittest.TestCase):
 
     def test_deterministic_autonomy_prefers_highest_scored_goal_action(self):
         context = SimpleNamespace(
+            interaction_mode="decision",
             goals=[{"description": "Stabilize the relay."}],
             available_actions=[
                 {"id": "low", "kind": "interact", "label": "Stabilize the relay",

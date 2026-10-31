@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from importlib.resources import files
@@ -18,6 +19,7 @@ class GameRepository:
         self.connection = sqlite3.connect(self.database)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
+        self._transaction_depth = 0
 
     def close(self) -> None:
         self.connection.close()
@@ -30,14 +32,30 @@ class GameRepository:
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
-        """Commit a complete engine operation or roll it back as a unit."""
+        """Join an outer operation without letting inner services commit it."""
+        depth = self._transaction_depth
+        savepoint = f"operation_{depth}"
+        if depth:
+            self.connection.execute(f"SAVEPOINT {savepoint}")
+        elif not self.connection.in_transaction:
+            self.connection.execute("BEGIN IMMEDIATE")
+        self._transaction_depth += 1
         try:
             yield
-        except Exception:
-            self.connection.rollback()
+        except BaseException:
+            if depth:
+                self.connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                self.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+            else:
+                self.connection.rollback()
             raise
         else:
-            self.connection.commit()
+            if depth:
+                self.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+            else:
+                self.connection.commit()
+        finally:
+            self._transaction_depth -= 1
 
     def create_schema(self) -> None:
         schema = files("badbadger.db").joinpath("schema.sql").read_text(encoding="utf-8")
@@ -91,6 +109,10 @@ class GameRepository:
             )
             """
         )
+        # Recompute derived confidence using current evidence rules while
+        # retaining the complete append-only evidence history in existing saves.
+        for row in self.connection.execute("SELECT id FROM beliefs").fetchall():
+            self._resolve_belief(int(row["id"]))
         self.connection.commit()
 
     def initialize_simulation(self, scenario_id: str) -> None:
@@ -173,6 +195,17 @@ class GameRepository:
             (subject_id, subject_kind),
         ).fetchone()
         return json.loads(row["details_json"]) if row else {}
+
+    def set_character_identity(self, character_id: str, profile: dict[str, Any]) -> None:
+        """Snapshot the authored profile only while seeding a new character."""
+        self.connection.execute(
+            "INSERT INTO character_identity(character_id,identity_id,revision,status,snapshot_json) VALUES (?,?,?,?,?)",
+            (character_id, profile["identity_id"], profile["revision"], profile["status"], json.dumps(profile, sort_keys=True)),
+        )
+
+    def character_identity(self, character_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute("SELECT snapshot_json FROM character_identity WHERE character_id=?", (character_id,)).fetchone()
+        return json.loads(row["snapshot_json"]) if row else None
 
     def set_character_canon(
         self, character_id: str, canon: dict[str, Any]
@@ -371,6 +404,37 @@ class GameRepository:
             for row in rows
         ]
 
+    def protected_belief(self, subject_id: str, predicate: str) -> bool:
+        return self.connection.execute(
+            "SELECT 1 FROM npc_disclosures WHERE subject_id=? AND predicate=? LIMIT 1",
+            (subject_id, predicate),
+        ).fetchone() is not None
+
+    def protected_texts(self) -> list[str]:
+        protected = []
+        for row in self.connection.execute("SELECT content,value_json FROM npc_disclosures"):
+            protected.append(row["content"])
+            value = json.loads(row["value_json"])
+            if isinstance(value, str) and len(value) >= 4:
+                protected.append(value)
+        protected.extend(row["summary"] for row in self.connection.execute(
+            "SELECT summary FROM character_biography_fragments WHERE visibility IN ('private','secret')"
+        ))
+        return protected
+
+    def contains_protected_text(self, text: str, *, protected: list[str] | None = None) -> bool:
+        """Catch literal/normalized echoes, not arbitrary semantic paraphrases.
+
+        Engine-controlled disclosure output deliberately bypasses this guard.
+        Numeric values alone are not blocked: doing so would censor ordinary
+        mission times without proving which secret a sentence refers to.
+        """
+        if protected is None:
+            protected = self.protected_texts()
+        normalized = " " + " ".join(re.findall(r"\w+", text.casefold())) + " "
+        return any(" " + " ".join(re.findall(r"\w+", secret.casefold())) + " " in normalized
+                   for secret in protected if secret.strip())
+
     def resolve_disclosure(
         self, character_id: str, recipient_id: str, disclosure_id: str
     ) -> tuple[bool, str]:
@@ -436,6 +500,7 @@ class GameRepository:
                     "kind": "interact",
                     "label": row["label"],
                     "description": row["description"],
+                    "request_phrases": effects.get("request_phrases", []),
                     **decision,
                 })
         return actions
@@ -575,6 +640,8 @@ class GameRepository:
                 for item in self.beliefs_for(target["id"])
             }
             for belief in beliefs:
+                if self.protected_belief(belief["subject_id"], belief["predicate"]):
+                    continue
                 existing = target_beliefs.get(
                     (belief["subject_id"], belief["predicate"])
                 )
@@ -606,8 +673,12 @@ class GameRepository:
         predicate: str,
     ) -> tuple[bool, str]:
         """Validate and resolve one NPC-to-NPC information exchange."""
+        if self.protected_belief(subject_id, predicate):
+            return False, "That information requires an authorized disclosure."
         speaker = self.get_character(speaker_id)
         target = self.get_character(target_id)
+        if self.pending_activity(speaker_id) is not None or self.pending_activity(target_id) is not None:
+            return False, "The social target is unavailable."
         if (
             speaker is None
             or target is None
@@ -733,7 +804,9 @@ class GameRepository:
             ).fetchone()
             trust = float(relationship["trust"]) if relationship else 0.0
             if trust < float(effects["player_trust_required"]):
-                return False, f"{character['name']} does not trust you enough to do that."
+                return False, (f"{character['name']} does not trust you enough to do that. "
+                               "Ask about their concerns and build trust before requesting this commitment again. "
+                               "No action was taken.")
         for fact in effects.get("facts", []):
             self.set_fact(
                 fact["subject_id"], fact["predicate"], fact["value"],
@@ -755,6 +828,15 @@ class GameRepository:
                     subject_id=observation.get("subject_id"),
                     source_character_id=character_id,
                 )
+        player = self.get_player()
+        if player["location_id"] == row["location_id"] and effects.get("visible_message"):
+            self.add_memory(player["id"], row["location_id"], "visible_consequence",
+                            str(effects["visible_message"]), salience=1.0,
+                            source_character_id=character_id)
+            if requested_by_player:
+                self.add_memory(player["id"], row["location_id"], "player_request",
+                                f"You asked {character['name']} to {row['label'].lower()}.",
+                                salience=0.95, source_character_id=player["id"])
         for goal_effect in effects.get("goals", []):
             self.set_goal_status(
                 goal_effect["character_id"], goal_effect["goal_id"],
@@ -880,6 +962,43 @@ class GameRepository:
             for row in rows
         ]
 
+    def player_consequences(self) -> list[dict[str, Any]]:
+        return [dict(row) for row in self.connection.execute(
+            "SELECT game_time,memory_kind,summary FROM memories WHERE character_id=? "
+            "AND memory_kind IN ('visible_consequence','player_request') ORDER BY id",
+            (self.get_player()["id"],),
+        )]
+
+    def public_chapter_deadline(self) -> int | None:
+        row = self.connection.execute(
+            "SELECT min(due_time) AS deadline FROM scheduled_events WHERE status='pending' "
+            "AND event_type='set_simulation_status' AND json_extract(payload_json,'$.player_visible')=1"
+        ).fetchone()
+        return row["deadline"] if row else None
+
+    def pending_goal_reaction_ids(self, npc_id: str) -> list[int]:
+        return [int(row["id"]) for row in self.connection.execute(
+            "SELECT id FROM npc_reaction_cues WHERE npc_id=? "
+            "AND trigger_kind='goal_resolved' AND status='pending' AND expires_at>=?",
+            (npc_id, self.current_time),
+        )]
+
+    def cover_goal_reactions(self, npc_id: str, cue_ids: list[int]) -> None:
+        """Retire previously queued goal recaps covered by a direct conversation."""
+        covered = []
+        for cue_id in cue_ids:
+            cursor = self.connection.execute(
+                "UPDATE npc_reaction_cues SET status='expired' WHERE id=? AND npc_id=? "
+                "AND trigger_kind='goal_resolved' AND status='pending'",
+                (cue_id, npc_id),
+            )
+            if cursor.rowcount:
+                covered.append(cue_id)
+        if covered:
+            self.record("npc_reactions_covered", actor_id=npc_id,
+                        input_data={"cue_ids": covered},
+                        result_data={"reason": "Discussed the aftermath directly with the player."})
+
     def speak_reaction(
         self, npc_id: str, cue_id: int, utterance: str
     ) -> tuple[bool, str]:
@@ -893,6 +1012,8 @@ class GameRepository:
         spoken = " ".join(utterance.split())
         if not spoken or len(spoken) > 500:
             return False, "The proposed speech is invalid."
+        if self.contains_protected_text(spoken):
+            return False, "That reaction cannot be spoken."
         self.connection.execute(
             "UPDATE npc_reaction_cues SET status='spoken',spoken_at=?,utterance=? "
             "WHERE id=? AND npc_id=? AND status='pending'",
@@ -938,6 +1059,10 @@ class GameRepository:
         for npc in self.characters_at(location_id, kind="npc"):
             if npc["id"] == character_id:
                 continue
+            if (actor["kind"] == "npc" and self.npc_parameters(character_id).get("follow_player") is True
+                    and self.npc_parameters(npc["id"]).get("follow_player") is True):
+                # Companions arriving together need no surprised-arrival recap.
+                continue
             self.queue_reaction(
                 npc["id"], "character_arrived",
                 f"{actor['name']} arrived in {location['name']}.",
@@ -977,7 +1102,7 @@ class GameRepository:
             )
 
     def memories_for(
-        self, character_id: str, limit: int = 8
+        self, character_id: str, limit: int = 8, *, relevance_text: str = ""
     ) -> list[dict[str, Any]]:
         """Return a bounded deterministic view: salient first, newest on ties."""
         rows = self.connection.execute(
@@ -989,9 +1114,16 @@ class GameRepository:
             ORDER BY salience DESC, game_time DESC, id DESC
             LIMIT ?
             """,
-            (character_id, limit),
+            (character_id, max(100, limit) if relevance_text else limit),
         ).fetchall()
-        return [dict(row) for row in rows]
+        memories = [dict(row) for row in rows]
+        if relevance_text:
+            tokens = {token for token in re.findall(r"\w+", relevance_text.lower()) if len(token) > 3}
+            memories.sort(key=lambda item: (
+                float(item["salience"]) + min(0.8, 0.15 * len(tokens & set(re.findall(r"\w+", item["summary"].lower())))),
+                item["game_time"], item["id"],
+            ), reverse=True)
+        return memories[:limit]
 
     def set_relationship(
         self,
@@ -1397,7 +1529,8 @@ class GameRepository:
     def characters_at(
         self, location_id: str, *, kind: str | None = None
     ) -> list[dict[str, Any]]:
-        sql = "SELECT * FROM characters WHERE location_id = ? AND active = 1"
+        sql = ("SELECT * FROM characters WHERE location_id = ? AND active = 1 "
+               "AND NOT EXISTS (SELECT 1 FROM character_activities a WHERE a.character_id=characters.id AND a.status='pending')")
         parameters: list[Any] = [location_id]
         if kind is not None:
             sql += " AND kind = ?"
@@ -1461,9 +1594,28 @@ class GameRepository:
 
     def examinable_subject_ids(self) -> list[str]:
         rows = self.connection.execute(
-            "SELECT subject_id FROM facts WHERE predicate = 'description' ORDER BY subject_id"
+            "SELECT f.subject_id FROM facts f LEFT JOIN examination_sites s ON s.subject_id=f.subject_id "
+            "WHERE f.predicate = 'description' AND f.hidden = 0 "
+            "AND (s.location_id IS NULL OR s.location_id=?) ORDER BY f.subject_id",
+            (self.get_player()["location_id"],),
         ).fetchall()
         return [str(row["subject_id"]) for row in rows]
+
+    def add_examination(self, subject_id: str, location_id: str, description: str, beliefs: list[dict]) -> None:
+        self.set_fact(subject_id, "description", description)
+        self.connection.execute("INSERT INTO examination_sites VALUES (?,?,?)",
+                                (subject_id, location_id, json.dumps(beliefs)))
+
+    def observe_examination(self, subject_id: str) -> None:
+        site = self.connection.execute("SELECT * FROM examination_sites WHERE subject_id=?", (subject_id,)).fetchone()
+        if site is None:
+            return
+        for witness in self.characters_at(site["location_id"]):
+            for belief in json.loads(site["beliefs_json"]):
+                self.set_belief(witness["id"], belief["subject_id"], belief["predicate"], belief["value"],
+                                belief.get("confidence", 1.0), source_type="direct", detail=f"Examined {subject_id} firsthand.")
+            self.add_memory(witness["id"], site["location_id"], "direct_observation",
+                            str(self.get_fact(subject_id, "description")), salience=.8, subject_id=subject_id)
 
     def move_character(self, character_id: str, location_id: str) -> None:
         cursor = self.connection.execute(
@@ -1583,17 +1735,24 @@ class GameRepository:
         """Resolve contradictory evidence by score, then most-recent evidence."""
         rows = self.connection.execute(
             """
-            SELECT id, value_json, confidence FROM belief_evidence
+            SELECT id, value_json, confidence,source_type,source_character_id FROM belief_evidence
             WHERE belief_id = ? ORDER BY id
             """,
             (belief_id,),
         ).fetchall()
         candidates: dict[str, dict[str, float | int]] = {}
+        hearsay: dict[tuple, float] = {}
         for row in rows:
             candidate = candidates.setdefault(
                 row["value_json"], {"score": 0.0, "latest_id": 0}
             )
-            candidate["score"] = float(candidate["score"]) + float(row["confidence"])
+            score = float(row["confidence"])
+            if row["source_type"] == "hearsay":
+                key = (row["source_character_id"], row["value_json"])
+                previous = hearsay.get(key, 0.0)
+                hearsay[key] = max(previous, score)
+                score = max(0.0, score - previous)
+            candidate["score"] = float(candidate["score"]) + score
             candidate["latest_id"] = int(row["id"])
         winning_value, winner = max(
             candidates.items(),

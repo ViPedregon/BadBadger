@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly BadBadger local backup
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=300
+Unit=badbadger-backup.service
+
+[Install]
+WantedBy=timers.target

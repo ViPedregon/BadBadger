@@ -1,9 +1,21 @@
 # Relay Crisis playtest
 
+The opening Gravenholt beta chapter is now **Blackbarrow: The North Road**;
+its scope, branch costs and automated coverage are in [BLACKBARROW.md](BLACKBARROW.md).
+The procedure below remains useful for the Relay Crisis prototype. Neither
+chapter's automated coverage replaces eventual external playtesting, but users
+do not need to manually recheck every implementation checkpoint.
+
 This build is ready for a short external playtest. The goal is to discover
 where a new player becomes confused, not to teach them the intended solution.
 
 ## Give the tester
+
+For the browser build, give the tester private access to the deployed game and
+start with **New game**. The page explains the objective, clock and suggestions.
+Do not coach them toward a particular NPC or ending. Selecting a suggestion
+fills the input; Send submits it. All three outcomes should remain viable across
+separate playthroughs, rather than requiring the tester to discover one solution.
 
 For a source checkout, ask them to double-click `play.cmd`. For a packaged
 build, give them `BadBadger.exe`. Do not explain the commands unless they ask;
@@ -23,6 +35,20 @@ Record these without interrupting the session:
 - whether the final choice feels informed, meaningful, and attributable;
 - any output that exposes implementation details or feels repetitive;
 - the ending they reached and whether the summary matches their understanding.
+
+For the browser playability pass, also check:
+
+- Can they explain which commands spend time and that NPCs may act independently?
+- Do they recognize that a decisive request is irreversible if accepted?
+- Does a refusal clearly state that no action happened, with a useful next step?
+- Can they distinguish investigation, aftermath and a completed chapter?
+- Does the recap attribute their accepted request without crediting them for an autonomous choice?
+- Does an offscreen outcome stay undisclosed unless they learn it through play?
+- Can they start over and explore a different outcome without losing their login?
+
+These are playtest questions, not claims of completed external validation.
+The automated suite checks the corresponding engine/presentation boundaries;
+human observation is still needed to judge whether the guidance is clear.
 
 ## Ask afterward
 

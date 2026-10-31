@@ -1,0 +1,24 @@
+[Unit]
+Description=BadBadger private Relay Crisis web application
+After=network.target
+
+[Service]
+Type=simple
+User=badbadger
+Group=badbadger
+WorkingDirectory=/opt/badbadger
+EnvironmentFile=/etc/badbadger/web.env
+ExecStart=/opt/badbadger/venv/bin/badbadger-web --save /var/lib/badbadger/relay.db --port 8000
+Restart=on-failure
+RestartSec=5
+StateDirectory=badbadger
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/badbadger
+
+[Install]
+WantedBy=multi-user.target

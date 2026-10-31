@@ -17,6 +17,7 @@ class BeliefProposal:
     predicate: str
     value: Any
     confidence: float
+    source_quote: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ class DeterministicNPCBackend:
 
     def respond(self, context: NPCContext, player_input: str) -> NPCResponse:
         lowered = player_input.lower()
-        if "engine decision tick" in lowered:
+        if context.interaction_mode == "decision":
             speech = next(
                 (
                     action for action in context.available_actions
@@ -66,8 +67,18 @@ class DeterministicNPCBackend:
                 None,
             )
             if speech is not None:
+                utterance = f"Here's where things stand: {speech['summary']}"
+                if speech.get("trigger_kind") == "goal_resolved":
+                    goal = next((goal for goal in context.goals if goal.get("history")
+                                 and goal["history"][-1].get("reason") == speech["summary"]), None)
+                    if goal is not None:
+                        utterance = {
+                            "completed": "That is the outcome I hoped for.",
+                            "failed": "That is not the outcome I wanted.",
+                            "abandoned": "My original plan is no longer possible.",
+                        }.get(goal["status"], utterance)
                 return NPCResponse(
-                    f"Here's where things stand: {speech['summary']}",
+                    utterance,
                     proposed_actions=[ActionProposal(
                         "speak", {"cue_id": speech["cue_id"]}
                     )],
@@ -130,7 +141,7 @@ class DeterministicNPCBackend:
             return NPCResponse("I have no useful action to take right now.")
         if any(
             phrase in lowered
-            for phrase in ("what now", "how do you feel", "what happened", "outcome")
+            for phrase in ("what now", "how do you feel", "what happened", "outcome", "why")
         ):
             resolved_goal = next(
                 (
@@ -150,27 +161,34 @@ class DeterministicNPCBackend:
                     "failed": "This is not the outcome I fought for.",
                     "abandoned": "That goal no longer has a path forward.",
                 }
+                player_id = next((item["id"] for item in context.visible_characters if item["kind"] == "player"), None)
                 player_relationship = next(
                     (
                         item for item in context.relationships
-                        if item["target_id"] == "player"
+                        if item["target_id"] == player_id
                     ),
                     None,
                 )
                 attitude = ""
                 if player_relationship is not None:
+                    action_id = history[-1].get("source_action_id") if history else None
+                    attributed = action_id is not None and any(
+                        change.get("source_type") == "action" and change.get("source_action_id") == action_id
+                        for change in player_relationship.get("recent_changes", [])
+                    )
                     if float(player_relationship["trust"]) >= 0.35:
-                        attitude = " I trust your part in what happened."
-                    elif float(player_relationship["trust"]) <= -0.1:
+                        attitude = " I trust your part in what happened." if attributed else " I trust your judgment."
+                    elif attributed and float(player_relationship["trust"]) <= -0.1:
                         attitude = " Your part in this has damaged my trust."
                 return NPCResponse(
                     f"{reactions[resolved_goal['status']]} {reason}{attitude}"
                 )
+        from badbadger.engine.consent import requests_action
         interaction = next(
             (
                 action for action in context.available_actions
                 if action["kind"] == "interact"
-                and all(word in lowered for word in action["label"].lower().split())
+                and requests_action(player_input, context.npc_id, context.name, action["label"], action.get("request_phrases", []))
             ),
             None,
         )
@@ -215,7 +233,7 @@ class DeterministicNPCBackend:
             return NPCResponse(
                 "Understood. I'll remember that the lights in Room B are out.",
                 belief_updates=[
-                    BeliefProposal("room_b", "lights_on", False, confidence=0.7)
+                    BeliefProposal("room_b", "lights_on", False, confidence=0.7, source_quote=player_input)
                 ],
             )
 
@@ -235,6 +253,31 @@ class DeterministicNPCBackend:
                         "The player expressed sincere appreciation.",
                     )],
                 )
+
+        if any(word in lowered for word in ("know", "think", "risk", "priority", "plan", "why", "missing", "belong",
+                                           "notice", "recommend", "suggest", "options", "crossing", "track", "convoy", "what should", "what can")):
+            active = [goal for goal in context.goals if goal.get("status", "active") == "active"]
+            lines = ["My priority is to " + active[0]["description"][0].lower()
+                     + active[0]["description"][1:]] if active else []
+            descriptions = {
+                ("sample", "is_unstable"): ("the sample is unstable", "the sample is stable"),
+                ("rescue", "is_listening"): ("rescue can hear us", "rescue is not listening"),
+                ("purge", "will_destroy_research"): ("purging will destroy the research", "purging will preserve the research"),
+            }
+            for belief in context.beliefs:
+                wording = descriptions.get((belief["subject_id"], belief["predicate"]))
+                if wording is not None and isinstance(belief["value"], bool):
+                    qualifier = "I believe" if belief["confidence"] >= 0.8 else "I'm not certain, but I think"
+                    supporting = [item for item in belief.get("evidence", []) if item["value"] == belief["value"]]
+                    source = max(supporting, key=lambda item: (item["confidence"], item["id"]), default={})
+                    if source.get("source_type") == "hearsay":
+                        lines.append(f"I've been told that {wording[0 if belief['value'] else 1]}, but I haven't confirmed it.")
+                    else:
+                        lines.append(f"{qualifier} {wording[0 if belief['value'] else 1]}.")
+            if lines:
+                if context.parameters.get("situation_advice"):
+                    lines.append(str(context.parameters["situation_advice"]))
+                return NPCResponse(" ".join(lines))
 
         if any(word in lowered for word in ("hello", "hi", "talk", "speak")):
             return NPCResponse("Hello. What would you like to discuss?")

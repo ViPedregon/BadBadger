@@ -92,6 +92,14 @@ class DeterministicIntentInterpreter:
             if len(unique) == 1:
                 return PlayerIntent("speak", target_id=next(iter(unique)))
 
+        # Addressing a present character directly is a conversation, not a
+        # reason to spend an intent-model call. Ambiguous names remain unknown.
+        normalized = self._normalize(text)
+        addressed = {npc["id"] for npc in context.visible_npcs
+                     if any(normalized.startswith(alias + ",") or normalized.startswith(alias + " ")
+                            for alias in self._aliases(npc["id"], npc["name"]))}
+        if len(addressed) == 1:
+            return PlayerIntent("speak", target_id=next(iter(addressed)))
         return PlayerIntent("unknown")
 
     @staticmethod

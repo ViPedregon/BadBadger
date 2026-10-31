@@ -1,0 +1,285 @@
+"""Optional real-browser acceptance checks: install .[web,web-test] + Chromium."""
+
+import os
+from pathlib import Path
+import secrets
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
+
+try:
+    from playwright.sync_api import sync_playwright, expect
+    import badbadger.web
+except ImportError:
+    sync_playwright = None
+
+CHROMIUM = shutil.which("chromium") or shutil.which("chromium-browser")
+
+
+@unittest.skipUnless(sync_playwright, "Install .[web,web-test] for browser checks")
+class BrowserTests(unittest.TestCase):
+    def setUp(self):
+        self.playwright = sync_playwright().start()
+        self.addCleanup(self.playwright.stop)
+        executable = CHROMIUM or self.playwright.chromium.executable_path
+        if not Path(executable).is_file():
+            self.skipTest("Run python -m playwright install chromium for browser checks")
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.save = Path(self.temp.name) / "relay.db"
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            self.port = listener.getsockname()[1]
+        self.origin = f"http://127.0.0.1:{self.port}"
+        self.password = secrets.token_urlsafe(32)
+        self.log = self.enterContext(open(Path(self.temp.name) / "server.log", "w"))
+        self.process = None
+        self.addCleanup(self.stop_server)
+        self.start_server()
+        self.browser = self.playwright.chromium.launch(executable_path=executable, args=["--no-sandbox"])
+        self.addCleanup(self.browser.close)
+        self.context = self.browser.new_context(http_credentials={"username": "victor", "password": self.password})
+        self.page = self.context.new_page()
+        self.page.goto(self.origin)
+        expect(self.page.locator("#command")).to_be_enabled()
+
+    def start_server(self):
+        self.process = subprocess.Popen(
+            [sys.executable, "-m", "badbadger.web", "--offline", "--scenario", "relay_crisis", "--save", str(self.save), "--port", str(self.port),
+             *getattr(self, "extra_server_args", [])],
+            env={**os.environ, "BADBADGER_WEB_PASSWORD": self.password, "BADBADGER_WEB_ORIGIN": self.origin},
+            stdout=self.log, stderr=self.log,
+        )
+        for _ in range(100):
+            if self.process.poll() is not None:
+                self.fail("Web process stopped during startup")
+            try:
+                urlopen(self.origin, timeout=.2)
+            except HTTPError as error:
+                if error.code == 401:
+                    return
+            except (URLError, TimeoutError):
+                pass
+            time.sleep(.05)
+        self.fail("Web process did not start")
+
+    def stop_server(self):
+        if self.process and self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait()
+
+    def command(self, text):
+        self.page.locator("#command").fill(text)
+        self.page.locator("#send").click()
+        expect(self.page.locator("#notice")).to_have_text("Saved.")
+        expect(self.page.locator("#command")).to_be_enabled()
+
+    def test_play_close_resume_restart_and_finish(self):
+        if os.name == "posix":
+            self.assertEqual(self.save.stat().st_mode & 0o777, 0o600)
+        for command in ("go to Relay Chamber", "tell Orr thank you", "tell Orr thanks"):
+            self.command(command)
+        self.context.close()
+        self.context = self.browser.new_context(http_credentials={"username": "victor", "password": self.password})
+        self.page = self.context.new_page()
+        self.page.goto(self.origin)
+        expect(self.page.locator("#status")).to_contain_text("Relay Chamber")
+        expect(self.page.locator(".player")).to_have_count(3)
+        self.stop_server()
+        self.start_server()
+        self.page.reload()
+        expect(self.page.locator(".player")).to_have_count(3)
+        self.command("tell Orr broadcast the distress packet")
+        expect(self.page.locator("#transcript")).to_contain_text("rescue acknowledgment")
+        self.command("wait 10 minutes")
+        expect(self.page.locator("#status")).to_contain_text("Mission status: ended")
+        expect(self.page.locator("#phase")).to_contain_text("chapter is complete")
+        expect(self.page.locator("#recap")).to_contain_text("rescue acknowledgment")
+
+    def test_guidance_fills_commands_without_spending_time(self):
+        expect(self.page.locator("#objective")).to_contain_text("Question the crew")
+        self.page.get_by_text("How mission time works", exact=True).click()
+        self.page.locator('button[data-command="examine situation table"]').click()
+        expect(self.page.locator("#command")).to_have_value("examine situation table")
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 0 minutes.")
+        expect(self.page.locator(".player")).to_have_count(0)
+        self.page.locator('button[data-consequential="true"]').click()
+        expect(self.page.locator("#notice")).to_contain_text("irreversible if accepted")
+        expect(self.page.locator(".player")).to_have_count(0)
+        self.page.locator('button[data-command="self"]').click()
+        expect(self.page.locator("#command")).to_have_value("self")
+        self.page.locator("#send").click()
+        expect(self.page.locator("#notice")).to_have_text("Saved.")
+        expect(self.page.locator("#transcript")).to_contain_text("You play Player.")
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 0 minutes.")
+
+    def test_lost_response_reload_and_retry_executes_once(self):
+        def lose_response(route):
+            route.fetch()
+            route.abort("failed")
+        self.page.route("**/api/turn", lose_response)
+        self.page.locator("#command").fill("wait 1")
+        self.page.locator("#send").click()
+        expect(self.page.locator("#notice")).to_contain_text("Connection interrupted")
+        self.page.unroute("**/api/turn")
+        self.page.reload()
+        expect(self.page.locator("#retry")).to_be_visible()
+        self.page.locator("#retry").click()
+        expect(self.page.locator("#notice")).to_have_text("Saved.")
+        expect(self.page.locator(".player")).to_have_count(1)
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 1 minutes.")
+
+    def test_new_game_cancel_confirm_and_lost_response_recovery(self):
+        self.command("go to Relay Chamber")
+        self.page.once("dialog", lambda dialog: dialog.dismiss())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator(".player")).to_have_count(1)
+        expect(self.page.locator("#status")).to_contain_text("Relay Chamber")
+
+        def lose_response(route):
+            route.fetch()
+            route.abort("failed")
+        self.page.route("**/api/new-game", lose_response)
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator("#notice")).to_contain_text("Connection interrupted")
+        self.page.unroute("**/api/new-game")
+        self.page.reload()
+        expect(self.page.locator("#retry")).to_have_text("Retry new game")
+        self.page.locator("#retry").click()
+        expect(self.page.locator("#notice")).to_contain_text("New game started")
+        expect(self.page.locator(".player")).to_have_count(0)
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 0 minutes.")
+        self.command("wait 1")
+
+    def test_blackbarrow_selection_investigation_resume_restart_and_ending(self):
+        self.command("examine situation table")
+        self.page.locator("#chapter-selection").select_option("blackbarrow")
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator("#notice")).to_contain_text("New game started")
+        expect(self.page.locator("h1")).to_have_text("Blackbarrow: The North Road")
+        expect(self.page.locator("#objective-stages")).to_contain_text("available")
+        expect(self.page.locator(".player")).to_have_count(0)
+        self.command("self")
+        expect(self.page.locator("#transcript")).to_contain_text("You play Victor Gravenholt")
+        self.command("go to Causeway")
+        expect(self.page.locator("#status")).to_contain_text("Captain Horace")
+        expect(self.page.locator("#status")).to_contain_text("Matilda Ash")
+        self.command("examine causeway ruts")
+        self.command("journal")
+        self.context.close()
+        self.context = self.browser.new_context(http_credentials={"username": "victor", "password": self.password})
+        self.page = self.context.new_page()
+        self.page.goto(self.origin)
+        expect(self.page.locator("h1")).to_have_text("Blackbarrow: The North Road")
+        expect(self.page.locator("#status")).to_contain_text("[Causeway]")
+        expect(self.page.locator(".player")).to_have_count(4)
+        self.stop_server()
+        self.start_server()
+        self.page.reload()
+        expect(self.page.locator("#status")).to_contain_text("[Causeway]")
+        self.command("go to Gatehouse")
+        self.command("tell Horace oversee a controlled crossing")
+        expect(self.page.locator("#objective-stages")).to_contain_text("completed")
+        expect(self.page.locator("#recap")).to_contain_text("spare security capacity")
+        self.command("ask Matilda what now")
+        self.command("wait 6 minutes")
+        expect(self.page.locator("#phase")).to_contain_text("chapter is complete")
+        expect(self.page.locator("#recap")).to_contain_text("You asked Captain Horace")
+        public = self.page.evaluate("async () => JSON.stringify(await (await fetch('/api/game')).json())")
+        for hidden in ("Alden", "Brenner", "Elena", "Valenbruck", "author_notes"):
+            self.assertNotIn(hidden, public)
+
+    def test_archive_resume_cancel_and_lost_response_recovery(self):
+        self.command("go to Relay Chamber")
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator("#notice")).to_contain_text("New game started")
+        self.page.get_by_text("Saved playthroughs", exact=True).click()
+        button = self.page.locator("button[data-archive]").first
+        self.page.once("dialog", lambda dialog: dialog.dismiss())
+        button.click()
+        expect(self.page.locator(".player")).to_have_count(0)
+
+        def lose_response(route):
+            route.fetch()
+            route.abort("failed")
+        self.page.route("**/api/resume", lose_response)
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        button.click()
+        expect(self.page.locator("#notice")).to_contain_text("Connection interrupted")
+        self.page.unroute("**/api/resume")
+        self.page.reload()
+        expect(self.page.locator("#retry")).to_have_text("Retry resume")
+        self.page.locator("#retry").click()
+        expect(self.page.locator("#notice")).to_contain_text("Saved playthrough resumed")
+        expect(self.page.locator(".player")).to_have_count(1)
+        expect(self.page.locator("#status")).to_contain_text("Relay Chamber")
+        self.stop_server()
+        self.start_server()
+        self.page.reload()
+        expect(self.page.locator(".player")).to_have_count(1)
+        expect(self.page.locator("button[data-archive]")).to_have_count(2)
+
+    def test_two_tabs_stale_turn_and_text_is_not_html(self):
+        other = self.context.new_page()
+        other.goto(self.origin)
+        expect(other.locator("#command")).to_be_enabled()
+        self.command("wait 1")
+        other.locator("#command").fill("wait 2")
+        other.locator("#send").click()
+        expect(other.locator("#notice")).to_contain_text("Your turn was not submitted")
+        expect(other.locator("#status")).to_contain_text("Mission time: 1 minutes.")
+        self.command('<img src=x onerror="window.badbadgerInjected=true">')
+        self.assertFalse(self.page.evaluate("Boolean(window.badbadgerInjected)"))
+        expect(self.page.locator("#transcript img")).to_have_count(0)
+        expect(self.page.locator("#transcript")).to_contain_text("<img src=x")
+
+    def test_tester_browser_pending_requests_and_saves_are_isolated(self):
+        import json
+        from badbadger.testers import tester_scope
+
+        self.stop_server()
+        accounts = {"alice": "a" * 32, "bob": "b" * 32}
+        config = Path(self.temp.name) / "testers.json"
+        config.write_text(json.dumps(accounts), encoding="utf-8")
+        self.extra_server_args = ["--testers", str(config), "--tester-save-dir", str(Path(self.temp.name) / "players")]
+        self.start_server()
+        self.context.close()
+        self.context = self.browser.new_context(http_credentials={"username": "alice", "password": accounts["alice"]})
+        self.page = self.context.new_page()
+        self.page.goto(self.origin)
+        expect(self.page.locator("#command")).to_be_enabled()
+        self.command("go to Relay Chamber")
+        self.page.evaluate("""scope => localStorage.setItem('badbadger.pending-turn.v1.' + scope,
+            JSON.stringify({request_id:'pending-alice', command:'wait 1', expected_revision:1}))""", tester_scope("alice"))
+        def sign_in(user):
+            storage = self.context.storage_state()
+            self.context.close()
+            self.context = self.browser.new_context(storage_state=storage,
+                http_credentials={"username": user, "password": accounts[user]})
+            self.page = self.context.new_page()
+            self.page.goto(self.origin)
+
+        sign_in("bob")
+        expect(self.page.locator("#command")).to_be_enabled()
+        expect(self.page.locator("#retry")).to_be_hidden()
+        expect(self.page.locator(".player")).to_have_count(0)
+        self.command("wait 2")
+        sign_in("alice")
+        expect(self.page.locator("#retry")).to_be_visible()
+        expect(self.page.locator(".player")).to_have_count(1)
+        self.page.locator("#retry").click()
+        expect(self.page.locator("#notice")).to_have_text("Saved.")
+        expect(self.page.locator(".player")).to_have_count(2)

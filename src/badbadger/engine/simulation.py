@@ -67,6 +67,11 @@ class SimulationEngine:
         duration=self.repository.connection_duration(player["location_id"], action.destination_id)
         if duration is None:
             return ActionOutcome(False,["There is no route to that destination."])
+        followers = [npc for npc in self.repository.characters_at(player["location_id"], kind="npc")
+                     if self.repository.npc_parameters(npc["id"]).get("follow_player") is True
+                     and self.repository.pending_activity(npc["id"]) is None]
+        for npc in followers:
+            self.repository.create_travel(npc["id"], action.destination_id, duration)
         self.repository.move_character(player["id"], action.destination_id)
         self.repository.queue_arrival_reactions(
             player["id"], action.destination_id
@@ -78,9 +83,12 @@ class SimulationEngine:
         )
 
     def _examine(self, action: ExamineAction) -> ActionOutcome:
+        if action.subject_id not in self.repository.examinable_subject_ids():
+            return ActionOutcome(False, ["You cannot examine that from here."])
         description = self.repository.get_fact(action.subject_id, "description")
         if description is None:
             return ActionOutcome(False, ["You find nothing meaningful to examine."])
+        self.repository.observe_examination(action.subject_id)
         return ActionOutcome(True, [str(description)], elapsed_minutes=2)
 
     @staticmethod

@@ -1,0 +1,31 @@
+name: Beta checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install -r deploy/requirements-web.txt
+          python -m pip install --no-deps -e .
+          python -m pip install '.[web-test]'
+      - name: Install browser
+        run: python -m playwright install --with-deps chromium
+      - name: Run engine, HTTP and browser checks
+        run: python -m unittest discover -s tests -v

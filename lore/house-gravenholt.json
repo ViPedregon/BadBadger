@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "source": "User-supplied House Gravenholt character and lore cards; established continuity.",
+  "setting": {"place": "Blackbarrow", "region": "Northern Frontier"},
+  "house": {
+    "name": "House Gravenholt",
+    "authority": "Lord Edric Gravenholt",
+    "words": "We Do Not Yield.",
+    "sigil": "Black badger with extended claws on a bone-colored shield.",
+    "values": ["duty", "competence", "observation", "practicality", "earned loyalty"],
+    "philosophy": "Strong walls matter. Stronger people matter more."
+  },
+  "party": {
+    "name": "The Gravenholt Three",
+    "members": ["victor_gravenholt", "matilda_ash", "horace"],
+    "purpose": "A small diplomatic and problem-solving party under Lord Edric's authority.",
+    "responsibilities": {
+      "victor_gravenholt": "Political engagement and diplomacy.",
+      "matilda_ash": "Reconnaissance and field intelligence.",
+      "horace": "Security and military matters."
+    },
+    "established_at_opening": {
+      "friendship": "Their friendship predates the opening story.",
+      "shared_life": "Shared meals, travel routines and private jokes.",
+      "trust": "An unusually high degree of mutual trust; no numerical scores established.",
+      "private_dynamic": "Closer to siblings than commander and subordinates. Horace is an older-brother figure, not a father or distant mentor.",
+      "victor_to_horace": "Victor trusts Horace's experience.",
+      "victor_to_matilda": "Victor trusts Matilda's field judgment.",
+      "matilda_to_victor": "Matilda trusts Victor because he respects her judgment.",
+      "matilda_and_horace": "An affectionate, teasing bond."
+    },
+    "private_familiarity": [
+      {"speaker": "horace", "target": "matilda_ash", "nickname": "Tracks", "audience": "private companionship"},
+      {"speakers": ["victor_gravenholt", "matilda_ash"], "target": "horace", "nickname": "Bear", "audience": "private companionship", "note": "They usually think he cannot hear; he generally can."}
+    ]
+  },
+  "gifts": [
+    {"from": "victor_gravenholt", "to": "matilda_ash", "item": "Broken-back seax refined with subtle southern craftsmanship."},
+    {"from": "victor_gravenholt", "to": "horace", "item": "Victor had the grip of Horace's old sword improved."}
+  ],
+  "continuity": {
+    "first_adventure": "Establishes the trio's existing bond; it does not create their friendship from scratch.",
+    "romance": {
+      "characters": ["victor_gravenholt", "matilda_ash"],
+      "opening_state": "Long friendship, not an established romantic relationship.",
+      "development": "Gradually develops into understated romance.",
+      "milestones": [],
+      "handling": "Future authoring continuity, not a past episodic memory or permission to force the player's feelings."
+    },
+    "later_adventure": {
+      "name": "Valenbruck succession crisis",
+      "status": "subsequent story, not already experienced in the opening chapter",
+      "introduces": "Elena",
+      "established_detail": "Her understanding of operational systems eventually adds a fourth perspective to the team.",
+      "other_details": "Not supplied."
+    }
+  },
+  "unresolved": {
+    "victor_age": "Approximately 30; provisional.",
+    "matilda_age": "Late twenties to early thirties; provisional.",
+    "horace_age": "Approximately 50–55; provisional.",
+    "horace_surname": {"status": "undecided", "candidates": ["Alden", "Brenner"], "selected": null},
+    "matilda_family_history": "Not established.",
+    "matilda_early_training": "Not established."
+  }
+}

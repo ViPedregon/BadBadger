@@ -8,6 +8,7 @@ from typing import Any
 
 from badbadger.db.repository import GameRepository
 from badbadger.engine.simulation import SimulationEngine
+from badbadger.scenarios.identities import IdentityError, materialize_identities
 
 
 class ScenarioError(ValueError):
@@ -196,6 +197,13 @@ def _validate(data: dict[str, Any]) -> None:
         value = presentation.get(key)
         if value is not None and (not isinstance(value, str) or not value.strip()):
             raise ScenarioError(f"Presentation {key} must be non-empty text")
+    for key in ("starting_hint", "investigation_hint"):
+        if key in presentation and (not isinstance(presentation[key], str) or not presentation[key].strip()):
+            raise ScenarioError(f"Presentation {key} must be non-empty text")
+    if "max_wait_minutes" in presentation and (type(presentation["max_wait_minutes"]) is not int or not 1 <= presentation["max_wait_minutes"] <= 1440):
+        raise ScenarioError("Invalid maximum wait")
+    if "public_action_ids" in presentation:
+        _validate_string_list(presentation["public_action_ids"], "Public action ids")
     locations = _required(data, "locations", list)
     characters = _required(data, "characters", list)
     location_ids: set[str] = set()
@@ -233,6 +241,34 @@ def _validate(data: dict[str, Any]) -> None:
         raise ScenarioError("Scenario must define exactly one player")
     for item in characters:
         _validate_character_canon(item, character_ids)
+        if "follow_player" in item.get("parameters", {}) and type(item["parameters"]["follow_player"]) is not bool:
+            raise ScenarioError("follow_player must be boolean")
+    examinations = data.get("examinations", [])
+    if not isinstance(data.get("facts", []), list):
+        raise ScenarioError("Facts must be a list")
+    if not isinstance(examinations, list):
+        raise ScenarioError("Examinations must be a list")
+    examined = set()
+    for site in examinations:
+        if not isinstance(site, dict) or set(site) - {"subject_id", "location_id", "description", "beliefs"}:
+            raise ScenarioError("Invalid examination fields")
+        for key in ("subject_id", "location_id", "description"):
+            if not isinstance(site.get(key), str) or not site[key].strip():
+                raise ScenarioError("Examination ids and description must be non-empty text")
+        if site["subject_id"] in examined or site["location_id"] not in location_ids:
+            raise ScenarioError("Duplicate examination or unknown location")
+        examined.add(site["subject_id"])
+        if any(isinstance(fact, dict) and fact.get("subject_id") == site["subject_id"] and fact.get("predicate") == "description"
+               for fact in data.get("facts", [])):
+            raise ScenarioError("Examination conflicts with a fact description")
+        if not isinstance(site.get("beliefs", []), list):
+            raise ScenarioError("Examination beliefs must be a list")
+        for belief in site.get("beliefs", []):
+            if (not isinstance(belief, dict) or set(belief) - {"subject_id", "predicate", "value", "confidence"}
+                    or not all(isinstance(belief.get(key), str) and belief[key].strip() for key in ("subject_id", "predicate"))
+                    or "value" not in belief or type(belief.get("confidence", 1.0)) not in {float, int}
+                    or not 0 <= belief.get("confidence", 1.0) <= 1):
+                raise ScenarioError("Invalid examination belief")
     goal_ids_by_character: dict[str, set[str]] = {}
     for item in characters:
         goals = item.get("goals", [])
@@ -376,6 +412,8 @@ def _validate(data: dict[str, Any]) -> None:
             ):
                 raise ScenarioError(f"Invalid precondition for action {action['id']}")
         effects = action.get("effects", {})
+        if "request_phrases" in effects:
+            _validate_string_list(effects["request_phrases"], "Delegation request phrases")
         decision = effects.get("decision", {})
         if not isinstance(decision, dict):
             raise ScenarioError(f"Decision policy for action {action['id']} must be an object")
@@ -722,6 +760,33 @@ def _validate(data: dict[str, Any]) -> None:
                         "an unknown or foreign action"
                     )
 
+    if not set(presentation.get("public_action_ids", [])).issubset(action_owners):
+        raise ScenarioError("Unknown public action id")
+    stages = presentation.get("objective_stages", [])
+    if not isinstance(stages, list):
+        raise ScenarioError("Objective stages must be a list")
+    seen_stages = set()
+    for stage in stages:
+        if not isinstance(stage, dict):
+            raise ScenarioError("Objective stage must be an object")
+        for key in ("id", "label"):
+            _required(stage, key, str)
+            if not stage[key].strip():
+                raise ScenarioError("Objective stage text must not be empty")
+        if stage["id"] in seen_stages:
+            raise ScenarioError("Duplicate objective stage")
+        if "depends_on" in stage and stage["depends_on"] not in seen_stages:
+            raise ScenarioError("Objective dependencies must reference an earlier stage")
+        if type(stage.get("optional", False)) is not bool:
+            raise ScenarioError("Objective optional flag must be boolean")
+        for key in ("action_ids", "activate_after"):
+            values = stage.get(key, [])
+            _validate_string_list(values, "Objective actions")
+            if not set(values).issubset(presentation.get("public_action_ids", [])):
+                raise ScenarioError("Objective actions must be explicitly public")
+        if not stage.get("action_ids"):
+            raise ScenarioError("Objective stage needs an action")
+        seen_stages.add(stage["id"])
     events = data.get("events", [])
     if not isinstance(events, list):
         raise ScenarioError("Scenario events must be a list")
@@ -753,7 +818,7 @@ def _validate(data: dict[str, Any]) -> None:
             raise ScenarioError("Scheduled event cancellation_key must be text")
 
 
-def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
+def load_scenario(path: str | Path, database: str | Path, *, allow_unapproved_identities: bool = False) -> SimulationEngine:
     """Load a validated scenario atomically into a new SQLite save."""
     source = Path(path)
     try:
@@ -762,6 +827,10 @@ def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
         raise ScenarioError(f"Cannot read scenario {source}: {error}") from error
     if not isinstance(data, dict):
         raise ScenarioError("Scenario root must be an object")
+    try:
+        materialize_identities(data, source.parent, allow_unapproved=allow_unapproved_identities)
+    except IdentityError as error:
+        raise ScenarioError(str(error)) from error
     _load_character_dossiers(data, source.parent)
     scenario_id = _required(data, "scenario_id", str)
     _validate(data)
@@ -782,6 +851,8 @@ def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
                 repository.add_connection(item["from"], item["to"], item["minutes"])
             for item in characters:
                 repository.add_character(item["id"], item["kind"], item["name"], item["location_id"])
+                if item.get("_identity_snapshot") is not None:
+                    repository.set_character_identity(item["id"], item["_identity_snapshot"])
                 if item.get("appearance"):
                     repository.set_appearance(item["id"], "character", item["appearance"])
                 if item.get("canon") is not None:
@@ -821,6 +892,8 @@ def load_scenario(path: str | Path, database: str | Path) -> SimulationEngine:
                     )
             for fact in data.get("facts", []):
                 repository.set_fact(fact["subject_id"], fact["predicate"], fact["value"], hidden=fact.get("hidden", False))
+            for site in data.get("examinations", []):
+                repository.add_examination(site["subject_id"], site["location_id"], site["description"], site.get("beliefs", []))
             for action in data.get("npc_actions", []):
                 repository.add_npc_action(
                     action["id"], action["character_id"], action["location_id"],

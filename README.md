@@ -4,6 +4,20 @@ A dialogue-driven game prototype where NPCs act from their own knowledge,
 beliefs, relationships, personalities, and goals while a deterministic engine
 owns world state and validates every consequence.
 
+## Browser application
+
+A password-protected browser application now includes **Blackbarrow: The North
+Road**, the opening Gravenholt beta chapter, plus the Relay Crisis prototype.
+AI dialogue is optional when a server-side OpenAI API key is configured.
+It saves every turn in SQLite and resumes the same game after closing the
+browser or restarting the server. See [WEB.md](WEB.md) for setup, authentication,
+testing, and the remaining remote hosting steps. The Python engine owns all
+game rules; the browser displays player-facing text only.
+
+See [BLACKBARROW.md](BLACKBARROW.md) for the chapter, its three approaches and save
+compatibility. Existing Relay Crisis saves are preserved; select Blackbarrow beside
+New game to begin Victor's adventure.
+
 ## Play Relay Crisis
 
 On Windows, double-click `play.cmd`. The first launch creates an isolated local
@@ -121,9 +135,12 @@ python -m badbadger.cli --save relay-crisis.db --scenario src\badbadger\scenario
 ```
 
 Begin with `examine situation table`, use `npc` and `npc <name>` for debugging,
-and speak naturally to Director Sable, Technician Orr, and Dr. Lin. A compact
-offline path is `go to Relay Chamber`, followed by
-`tell Technician Orr broadcast the distress packet`. With the OpenAI backend,
+and speak naturally to Director Sable, Technician Orr, and Dr. Lin. Orr's
+cooperation requires earned trust: the request may be refused in a fresh save.
+An offline regression path is `go to Relay Chamber`, `tell Orr thank you`,
+`tell Orr thanks`, then `tell Orr broadcast the distress packet`; this exercises
+the current simple relationship rules, rather than representing a preferred
+story solution. With the OpenAI backend,
 ask what each character knows before deciding whom to inform or encourage.
 The opening decision schedule leaves enough time to question multiple NPCs;
 ordinary information requests cannot authorize an irreversible interaction.
@@ -142,6 +159,11 @@ write facts back to the simulation. Rendering should run asynchronously so it
 cannot pause the game clock or action loop.
 
 ### Character canon
+
+Reusable, revisioned identities are described in [CHARACTERS.md](CHARACTERS.md).
+Victor Gravenholt, Matilda Ash and Captain Horace have revision-2 profiles based
+on the user's established House Gravenholt lore. They are not replacements for
+the Relay Crisis cast. Shared continuity is recorded under [lore/](lore/README.md).
 
 Characters may define durable authored identity separately from mission state:
 
@@ -238,7 +260,7 @@ as hearsay from the player.
 Scenario interactions may declare concise `observations`. When an interaction
 resolves, the deterministic engine stores that observation only for active NPCs
 at the interaction's location. NPC context retrieves at most eight memories,
-ordered by salience and then recency. Observation text is explicitly authored
+ranked by salience, topic overlap and recency. Observation text is explicitly authored
 as visible information; hidden fact payloads are never converted into memories
 or exposed automatically. Use `npc <name>` to inspect the resulting memory view.
 
@@ -310,7 +332,7 @@ To enable structured LLM dialogue through the OpenAI Responses API:
 ```powershell
 python -m pip install -e ".[openai]"
 $env:OPENAI_API_KEY = "your-api-key"
-$env:BADBADGER_OPENAI_MODEL = "gpt-5.6"  # optional override
+$env:BADBADGER_OPENAI_MODEL = "gpt-4.1-mini"  # optional override
 python -m badbadger.cli --save my-game.db
 ```
 
@@ -319,6 +341,9 @@ The client uses `responses.parse` with a strict Pydantic response model and
 backend if the API call still fails. The API receives only the filtered NPC
 context and exact player input; it cannot access SQLite or directly execute
 proposed actions.
+
+See [KNOWLEDGE.md](KNOWLEDGE.md) for current consent, source-quoted hearsay,
+conversation-memory and protected-information boundaries, including their limits.
 
 When OpenAI mode is enabled, unfamiliar player phrasing also goes through a
 separate structured intent interpreter. Familiar commands are still parsed

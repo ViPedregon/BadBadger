@@ -1,0 +1,319 @@
+"""Player-facing chapter boundary with engine-validated AI proposals.
+
+Construct once at startup with a server-owned path. Each call owns its SQLite
+connection; BEGIN IMMEDIATE serializes turns even across service instances.
+No network listener, authentication, or client-controlled save paths live here.
+"""
+
+from __future__ import annotations
+
+import json
+import tempfile
+from importlib.resources import as_file, files
+from pathlib import Path
+
+from badbadger.application import GameApplication, open_prototype
+from badbadger.config import build_configured_intent_interpreter, build_configured_npc_backend
+from badbadger.db.repository import GameRepository
+from badbadger.engine.simulation import SimulationEngine
+from badbadger.scenarios.catalog import CHAPTERS, chapter, chapter_key
+
+
+class TurnConflict(ValueError):
+    """The request id was reused or the client viewed an older revision."""
+
+
+class RelayService:
+    """Persist complete turns, their public transcript, and replayable receipts."""
+
+    def __init__(self, database: str | Path, *, offline: bool = True, scenario: str = "relay_crisis") -> None:
+        selected = chapter(scenario)
+        self.npc_backend, self.backend_label = build_configured_npc_backend(offline=offline)
+        self.intent_interpreter, self.intent_label = build_configured_intent_interpreter(offline=offline)
+        self.database = Path(database)
+        self.database.parent.mkdir(parents=True, exist_ok=True)
+        resource = files("badbadger.scenarios").joinpath(selected["file"])
+        with as_file(resource) as scenario:
+            app = open_prototype(self.database, scenario=scenario, developer_mode=False)
+        try:
+            repository = app.repository
+            chapter_key(repository.scenario_id)
+            # Run only at startup, never during an application turn.
+            repository.connection.executescript("""
+                CREATE TABLE IF NOT EXISTS player_session (
+                    id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
+                    opening_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS player_turns (
+                    revision INTEGER PRIMARY KEY, request_id TEXT NOT NULL UNIQUE,
+                    command TEXT NOT NULL, response_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS playthrough_archives (
+                    end_revision INTEGER PRIMARY KEY,
+                    saved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    state_json TEXT NOT NULL
+                );
+            """)
+            columns = {row["name"] for row in repository.connection.execute("PRAGMA table_info(player_session)")}
+            if "game_start_revision" not in columns:
+                repository.connection.execute("ALTER TABLE player_session ADD COLUMN game_start_revision INTEGER NOT NULL DEFAULT 0")
+            if "restored_transcript_json" not in columns:
+                repository.connection.execute("ALTER TABLE player_session ADD COLUMN restored_transcript_json TEXT NOT NULL DEFAULT '[]'")
+            columns = {row["name"] for row in repository.connection.execute("PRAGMA table_info(player_turns)")}
+            if "operation" not in columns:
+                repository.connection.execute("ALTER TABLE player_turns ADD COLUMN operation TEXT NOT NULL DEFAULT 'turn'")
+            with repository.transaction():
+                repository.connection.execute(
+                    "INSERT OR IGNORE INTO player_session(id,revision,opening_json) VALUES (1, 0, ?)",
+                    (json.dumps(app.introduction()),),
+                )
+        finally:
+            app.repository.close()
+
+    def _app(self, repository: GameRepository) -> GameApplication:
+        return GameApplication(
+            SimulationEngine(repository), npc_backend=self.npc_backend,
+            backend_label=self.backend_label, intent_interpreter=self.intent_interpreter,
+            intent_label=self.intent_label, developer_mode=False,
+        )
+
+    @staticmethod
+    def _transcript(repository, session):
+        return json.loads(session["restored_transcript_json"]) + [
+            {"command": row["command"], **json.loads(row["response_json"])}
+            for row in repository.connection.execute(
+                "SELECT command,response_json FROM player_turns WHERE revision>? ORDER BY revision",
+                (session["game_start_revision"],))]
+
+    @staticmethod
+    def _archive_list(repository):
+        # Never return raw archived state, private goals, or NPC context.
+        result = []
+        for row in repository.connection.execute(
+                "SELECT end_revision,saved_at,coalesce(json_extract(state_json,'$.scenario_id'), json_extract(state_json,'$.tables.simulation[0].scenario_id')) AS scenario_id "
+                "FROM playthrough_archives ORDER BY end_revision DESC"):
+            result.append({"id": row["end_revision"], "saved_at": row["saved_at"] + " UTC",
+                           "title": chapter(chapter_key(row["scenario_id"]))["title"]})
+        return result
+
+    def resume_archive(self, request_id: str, expected_revision: int, archive_id: int, *, confirmed=False):
+        """Swap engine snapshots atomically, preserving global receipts/revisions."""
+        if confirmed is not True:
+            raise ValueError("Confirm resuming an archived game first")
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise ValueError("Invalid request id")
+        if type(expected_revision) is not int or expected_revision < 0 or type(archive_id) is not int or archive_id < 0:
+            raise ValueError("Invalid revision or archive id")
+        with GameRepository(self.database) as repository:
+            with repository.transaction():
+                receipt = repository.connection.execute(
+                    "SELECT operation,response_json FROM player_turns WHERE request_id=?", (request_id,)).fetchone()
+                if receipt:
+                    previous = json.loads(receipt["response_json"])
+                    if receipt["operation"] != "resume" or previous.get("archive_id") != archive_id:
+                        raise TurnConflict("Request id already used for another operation")
+                    return previous
+                session = repository.connection.execute("SELECT * FROM player_session WHERE id=1").fetchone()
+                if session["revision"] != expected_revision:
+                    raise TurnConflict("Game changed; refresh before resuming")
+                row = repository.connection.execute(
+                    "SELECT state_json FROM playthrough_archives WHERE end_revision=?", (archive_id,)).fetchone()
+                if row is None:
+                    raise ValueError("Saved playthrough not found")
+                target = json.loads(row["state_json"])
+                selected_key = chapter_key(target.get("scenario_id") or target["tables"]["simulation"][0]["scenario_id"])
+                tables = [row[0] for row in repository.connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+                    "AND name NOT IN ('player_session','player_turns','playthrough_archives')")]
+                if set(target["tables"]) != set(tables):
+                    raise ValueError("This saved playthrough needs a schema migration before resuming")
+                def quoted(name):
+                    return '"' + name.replace('"', '""') + '"'
+                current = {table: [dict(row) for row in repository.connection.execute(f"SELECT * FROM {quoted(table)}")]
+                           for table in tables}
+                archive = {"tables": current, "scenario_id": repository.scenario_id,
+                           "opening": json.loads(session["opening_json"]),
+                           "start_revision": session["game_start_revision"], "end_revision": expected_revision,
+                           "transcript": self._transcript(repository, session)}
+                # Older archives predate transcript snapshots. Their immutable turn range is retained.
+                transcript = target.get("transcript")
+                if transcript is None:
+                    transcript = [{"command": row["command"], **json.loads(row["response_json"])}
+                                  for row in repository.connection.execute(
+                                      "SELECT command,response_json FROM player_turns WHERE revision>? AND revision<=? ORDER BY revision",
+                                      (target["start_revision"], target["end_revision"]))]
+                repository.connection.execute("INSERT INTO playthrough_archives(end_revision,state_json) VALUES (?,?)",
+                                              (expected_revision, json.dumps(archive)))
+                repository.connection.execute("PRAGMA defer_foreign_keys=ON")
+                for table in tables:
+                    repository.connection.execute(f"DELETE FROM {quoted(table)}")
+                for table in tables:
+                    allowed = {row["name"] for row in repository.connection.execute(f"PRAGMA table_info({quoted(table)})")}
+                    for record in target["tables"][table]:
+                        if not record or not set(record).issubset(allowed):
+                            raise ValueError("Unsupported saved playthrough columns")
+                        columns = ','.join(quoted(column) for column in record)
+                        placeholders = ','.join('?' for _ in record)
+                        repository.connection.execute(f"INSERT INTO {quoted(table)} ({columns}) VALUES ({placeholders})", tuple(record.values()))
+                if repository.connection.execute("PRAGMA foreign_key_check").fetchone():
+                    raise ValueError("Saved playthrough failed integrity checks")
+                revision = expected_revision + 1
+                response = {"revision": revision, "archive_id": archive_id, "scenario": selected_key,
+                            "messages": ["Saved playthrough resumed. Your previous game is archived."],
+                            "should_quit": False, "status": self._app(repository).status()}
+                repository.connection.execute(
+                    "UPDATE player_session SET revision=?,game_start_revision=?,opening_json=?,restored_transcript_json=? WHERE id=1",
+                    (revision, revision, json.dumps(target["opening"]), json.dumps(transcript)))
+                repository.connection.execute(
+                    "INSERT INTO player_turns(revision,request_id,command,response_json,operation) VALUES (?,?,?,?, 'resume')",
+                    (revision, request_id, "Resume saved playthrough", json.dumps(response)))
+                return response
+
+    def view(self) -> dict:
+        """Return only approved player output, never raw engine records."""
+        with GameRepository(self.database) as repository:
+            with repository.transaction():
+                session = repository.connection.execute(
+                    "SELECT * FROM player_session WHERE id=1"
+                ).fetchone()
+                turns = repository.connection.execute(
+                    "SELECT command, response_json FROM player_turns WHERE revision>? ORDER BY revision",
+                    (session["game_start_revision"],),
+                ).fetchall()
+                return {
+                    "scenario": {"key": chapter_key(repository.scenario_id),
+                                 **{key: chapter(chapter_key(repository.scenario_id))[key] for key in ("title", "tagline")}},
+                    "chapters": [{"key": key, "title": value["title"] + (" (prototype)" if key == "relay_crisis" else "")}
+                                 for key, value in CHAPTERS.items()],
+                    "revision": session["revision"],
+                    "dialogue_mode": "ai" if self.backend_label.startswith("OpenAI") else "offline",
+                    "guidance": self._app(repository).player_guidance(),
+                    "player": self._app(repository).player_identity(),
+                    "opening": json.loads(session["opening_json"]),
+                    "status": self._app(repository).status(),
+                    "archives": self._archive_list(repository),
+                    "transcript": json.loads(session["restored_transcript_json"]) + [
+                        {"command": row["command"], **json.loads(row["response_json"])}
+                        for row in turns
+                    ],
+                }
+
+    def submit(self, request_id: str, command: str, expected_revision: int) -> dict:
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise ValueError("Request id must contain 1 to 128 characters")
+        if not isinstance(command, str) or not 1 <= len(command.strip()) <= 2000:
+            raise ValueError("Command must contain 1 to 2000 characters")
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("Revision must be a nonnegative integer")
+        if len(command) > 2000:
+            raise ValueError("Command is too long")
+        with GameRepository(self.database) as repository:
+            with repository.transaction():
+                receipt = repository.connection.execute(
+                    "SELECT command, response_json, operation FROM player_turns WHERE request_id=?",
+                    (request_id,),
+                ).fetchone()
+                if receipt:
+                    if receipt["operation"] != "turn" or receipt["command"] != command:
+                        raise TurnConflict("Request id already used for another command")
+                    return json.loads(receipt["response_json"])
+                revision = repository.connection.execute(
+                    "SELECT revision FROM player_session WHERE id=1"
+                ).fetchone()[0]
+                if revision != expected_revision:
+                    raise TurnConflict("Game changed; refresh before submitting again")
+                app = self._app(repository)
+                normalized = " ".join(command.lower().split())
+                # The CLI summary includes global private goal outcomes. Until a
+                # player-knowledge summary exists, expose only public status.
+                if normalized in {"summary", "recap"}:
+                    messages, should_quit = app.player_summary(), False
+                else:
+                    messages, should_quit = app.handle(command)
+                response = {
+                    "revision": revision + 1,
+                    "messages": messages,
+                    "should_quit": should_quit,
+                    "status": app.status(),
+                }
+                repository.connection.execute(
+                    "INSERT INTO player_turns(revision,request_id,command,response_json) VALUES (?, ?, ?, ?)",
+                    (revision + 1, request_id, command, json.dumps(response)),
+                )
+                repository.connection.execute(
+                    "UPDATE player_session SET revision=? WHERE id=1", (revision + 1,)
+                )
+                return response
+
+    def new_game(self, request_id: str, expected_revision: int, *, confirmed: bool = False, scenario: str | None = None) -> dict:
+        """Archive the old engine state and reseed in one serialized transaction.
+
+        Revisions never reset, so old browser tabs cannot submit to the new game.
+        Receipts are retained across playthroughs so a retried reset is harmless.
+        """
+        if confirmed is not True:
+            raise ValueError("Confirm starting a new game first")
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise ValueError("Request id must contain 1 to 128 characters")
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("Revision must be a nonnegative integer")
+        if scenario is not None:
+            chapter(scenario)
+        with GameRepository(self.database) as repository:
+            with repository.transaction():
+                receipt = repository.connection.execute(
+                    "SELECT operation,response_json FROM player_turns WHERE request_id=?", (request_id,),
+                ).fetchone()
+                if receipt:
+                    if receipt["operation"] != "new-game":
+                        raise TurnConflict("Request id already used for another command")
+                    previous = json.loads(receipt["response_json"])
+                    if scenario is not None and previous.get("scenario") != scenario:
+                        raise TurnConflict("Request id already used for another chapter")
+                    return previous
+                session = repository.connection.execute("SELECT * FROM player_session WHERE id=1").fetchone()
+                if session["revision"] != expected_revision:
+                    raise TurnConflict("Game changed; refresh before starting a new game")
+                selected_key = scenario or chapter_key(repository.scenario_id)
+                selected = chapter(selected_key)
+                resource = files("badbadger.scenarios").joinpath(selected["file"])
+                with tempfile.TemporaryDirectory(prefix="badbadger-new-") as directory:
+                    with as_file(resource) as scenario:
+                        fresh = open_prototype(Path(directory) / "fresh.db", scenario=scenario, developer_mode=False)
+                    try:
+                        tables = [row["name"] for row in fresh.repository.connection.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                        )]
+                        # Names come only from the bundled engine schema, never a client.
+                        def quoted(name):
+                            return '"' + name.replace('"', '""') + '"'
+                        old = {table: [dict(row) for row in repository.connection.execute(f"SELECT * FROM {quoted(table)}")]
+                               for table in tables}
+                        archive = {"tables": old, "scenario_id": repository.scenario_id, "opening": json.loads(session["opening_json"]),
+                                   "start_revision": session["game_start_revision"], "end_revision": expected_revision,
+                                   "transcript": self._transcript(repository, session)}
+                        repository.connection.execute("INSERT INTO playthrough_archives(end_revision,state_json) VALUES (?,?)",
+                                                      (expected_revision, json.dumps(archive)))
+                        repository.connection.execute("PRAGMA defer_foreign_keys=ON")
+                        for table in tables:
+                            repository.connection.execute(f"DELETE FROM {quoted(table)}")
+                        for table in tables:
+                            for row in fresh.repository.connection.execute(f"SELECT * FROM {quoted(table)}"):
+                                columns = ','.join(quoted(column) for column in row.keys())
+                                placeholders = ','.join('?' for _ in row.keys())
+                                repository.connection.execute(f"INSERT INTO {quoted(table)} ({columns}) VALUES ({placeholders})", tuple(row))
+                        opening = fresh.introduction()
+                    finally:
+                        fresh.repository.close()
+                revision = expected_revision + 1
+                response = {"revision": revision, "scenario": selected_key, "messages": [f"New {selected['title']} game started."],
+                            "should_quit": False, "status": self._app(repository).status()}
+                repository.connection.execute(
+                    "UPDATE player_session SET revision=?,game_start_revision=?,opening_json=?,restored_transcript_json='[]' WHERE id=1",
+                    (revision, revision, json.dumps(opening)),
+                )
+                repository.connection.execute(
+                    "INSERT INTO player_turns(revision,request_id,command,response_json,operation) VALUES (?,?,?,?,'new-game')",
+                    (revision, request_id, "New game", json.dumps(response)),
+                )
+                return response
