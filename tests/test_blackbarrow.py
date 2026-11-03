@@ -66,6 +66,15 @@ class BlackbarrowTests(unittest.TestCase):
                 self.assertNotIn("Alden", recap)
 
     def test_blocked_orders_explain_location_and_plan_prerequisite(self):
+        from unittest.mock import Mock
+
+        backend = self.game.npc_backend
+        self.game.npc_backend = Mock(wraps=backend)
+        def respond(context, text):
+            if text.lower() in {"matilda, guide the high track", "horace, arrange a guard"}:
+                raise AssertionError("Order reached dialogue backend")
+            return backend.respond(context, text)
+        self.game.npc_backend.respond.side_effect = respond
         self.command("go to High Track")
         self.command("examine ridge markers")
         route = self.command("Matilda, guide the high track")["messages"]
@@ -76,6 +85,10 @@ class BlackbarrowTests(unittest.TestCase):
         with GameRepository(self.path) as repository:
             self.assertFalse(repository.get_fact("chapter", "resolved"))
             self.assertIsNone(repository.get_fact("convoy", "grain_guarded"))
+        self.command("go to Gatehouse")
+        self.command("Matilda, guide the high track")
+        guard = self.command("Horace, arrange a guard")["messages"]
+        self.assertIn("grain is guarded, not delivered", " ".join(guard))
 
     def test_guard_grain_followup_is_validated_persistent_and_not_delivery(self):
         self.assertNotIn("arrange a guard", str(self.game.view()["guidance"]["suggestions"]))

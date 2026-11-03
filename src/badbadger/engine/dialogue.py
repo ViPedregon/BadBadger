@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from badbadger.agents.context import NPCContextBuilder
-from badbadger.agents.npc import NPCBackend, NPCResponse
+from badbadger.agents.npc import ActionProposal, NPCBackend, NPCResponse
 from badbadger.db.repository import GameRepository
 from badbadger.engine.events import process_due_events
 from badbadger.engine.npc_actions import resolve_npc_proposal
@@ -47,7 +47,12 @@ class DialogueService:
             else []
         )
         blocked_order = self._blackbarrow_order_feedback(npc_id, npc["name"], player["location_id"], player_input)
-        response = NPCResponse(blocked_order) if blocked_order else self.backend.respond(context, player_input)
+        if blocked_order:
+            response = NPCResponse(blocked_order)
+        else:
+            response = self._blackbarrow_order_response(context, player_input)
+            if response is None:
+                response = self.backend.respond(context, player_input)
         self._validate_response(response)
         response, protected_output = guard_response(self.repository, response)
         presented_dialogue = ("I haven't taken that action." if response.degraded and response.proposed_actions
@@ -205,6 +210,20 @@ class DialogueService:
                 },
             )
         return [f"{npc['name']}: \"{presented_dialogue}\"", *event_messages]
+
+    def _blackbarrow_order_response(self, context, text: str) -> NPCResponse | None:
+        if self.repository.scenario_id != "blackbarrow-north-road-0.1":
+            return None
+        for action in context.available_actions:
+            action_id = action.get("id")
+            if action_id in {"high_track", "guard_grain"} and self._interaction_requested(
+                context.available_actions, action_id, text, context.npc_id, context.name,
+            ):
+                return NPCResponse(
+                    f"I'll {action['label'].lower()}.",
+                    proposed_actions=[ActionProposal("interact", {"action_id": action_id})],
+                )
+        return None
 
     def _blackbarrow_order_feedback(self, npc_id: str, name: str, location: str, text: str) -> str | None:
         if self.repository.scenario_id != "blackbarrow-north-road-0.1":
