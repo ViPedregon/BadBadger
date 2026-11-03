@@ -32,6 +32,11 @@ class DialogueService:
             return [f'{npc["name"]}: "Ask me about the situation or what I believe. I cannot provide private records."']
 
         context = self.context_builder.build(npc_id, player_input)
+        # Supply the shorter order even for saves with older scenario data.
+        if self.repository.scenario_id == "blackbarrow-north-road-0.1" and npc_id == "horace":
+            for action in context.available_actions:
+                if action.get("kind") == "interact" and action.get("id") == "guard_grain":
+                    action["request_phrases"] = [*action.get("request_phrases", []), "arrange a guard"]
         aftermath_question = bool(re.search(
             r"\bwhy\b|\bwhat now\b|\bhow do you feel\b|\bwhat happened\b|\boutcome\b",
             player_input, re.IGNORECASE,
@@ -210,7 +215,7 @@ class DialogueService:
             return "Return to the Gatehouse to give the convoy its orders."
         if npc_id == "horace" and requests_action(
             text, npc_id, name, "Arrange a guard for the grain",
-            ["arrange a guard for the grain wagons", "guard the grain", "secure the grain",
+            ["arrange a guard", "arrange a guard for the grain wagons", "guard the grain", "secure the grain",
              "protect the grain wagons", "secure what we leave behind"],
         ):
             if self.repository.get_fact("chapter", "outcome") != "high_track":

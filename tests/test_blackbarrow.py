@@ -69,7 +69,7 @@ class BlackbarrowTests(unittest.TestCase):
         self.command("go to High Track")
         self.command("examine ridge markers")
         route = self.command("Matilda, guide the high track")["messages"]
-        guard = self.command("Horace, arrange a guard for the grain")["messages"]
+        guard = self.command("Horace, arrange a guard")["messages"]
         self.assertIn("Return to the Gatehouse", " ".join(route))
         self.assertIn("once we commit to the high-track plan", " ".join(guard))
         self.assertNotIn("No movement was requested", " ".join(route + guard))
@@ -87,7 +87,7 @@ class BlackbarrowTests(unittest.TestCase):
         self.command("ask Captain Horace why we should arrange a guard for the grain")
         with GameRepository(self.path) as repository:
             self.assertFalse(repository.get_fact("convoy", "guards_committed"))
-        result = self.command("Captain Horace, arrange a guard for the grain")
+        result = self.command("Captain Horace, arrange a guard")
         self.assertIn("grain is guarded, not delivered", " ".join(result["messages"]))
         self.game = RelayService(self.path)
         with GameRepository(self.path) as repository:
