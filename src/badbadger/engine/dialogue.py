@@ -13,6 +13,9 @@ from badbadger.engine.consent import requests_action, requests_move
 from badbadger.engine.knowledge import grounded_claim, guard_response, inspection_request
 
 
+_GRAIN_GUARD_ALIASES = ("arrange a guard", "arrange a guard for the wagons")
+
+
 class DialogueService:
     def __init__(self, repository: GameRepository, backend: NPCBackend) -> None:
         self.repository = repository
@@ -36,7 +39,7 @@ class DialogueService:
         if self.repository.scenario_id == "blackbarrow-north-road-0.1" and npc_id == "horace":
             for action in context.available_actions:
                 if action.get("kind") == "interact" and action.get("id") == "guard_grain":
-                    action["request_phrases"] = [*action.get("request_phrases", []), "arrange a guard"]
+                    action["request_phrases"] = [*action.get("request_phrases", []), *_GRAIN_GUARD_ALIASES]
         aftermath_question = bool(re.search(
             r"\bwhy\b|\bwhat now\b|\bhow do you feel\b|\bwhat happened\b|\boutcome\b",
             player_input, re.IGNORECASE,
@@ -234,7 +237,7 @@ class DialogueService:
             return "Return to the Gatehouse to give the convoy its orders."
         if npc_id == "horace" and requests_action(
             text, npc_id, name, "Arrange a guard for the grain",
-            ["arrange a guard", "arrange a guard for the grain wagons", "guard the grain", "secure the grain",
+            [*_GRAIN_GUARD_ALIASES, "arrange a guard for the grain wagons", "guard the grain", "secure the grain",
              "protect the grain wagons", "secure what we leave behind"],
         ):
             if self.repository.get_fact("chapter", "outcome") != "high_track":

@@ -71,14 +71,14 @@ class BlackbarrowTests(unittest.TestCase):
         backend = self.game.npc_backend
         self.game.npc_backend = Mock(wraps=backend)
         def respond(context, text):
-            if text.lower() in {"matilda, guide the high track", "horace, arrange a guard"}:
+            if text.lower() in {"matilda, guide the high track", "horace, arrange a guard for the wagons."}:
                 raise AssertionError("Order reached dialogue backend")
             return backend.respond(context, text)
         self.game.npc_backend.respond.side_effect = respond
         self.command("go to High Track")
         self.command("examine ridge markers")
         route = self.command("Matilda, guide the high track")["messages"]
-        guard = self.command("Horace, arrange a guard")["messages"]
+        guard = self.command("Horace, arrange a guard for the wagons.")["messages"]
         self.assertIn("Return to the Gatehouse", " ".join(route))
         self.assertIn("once we commit to the high-track plan", " ".join(guard))
         self.assertNotIn("No movement was requested", " ".join(route + guard))
@@ -87,7 +87,7 @@ class BlackbarrowTests(unittest.TestCase):
             self.assertIsNone(repository.get_fact("convoy", "grain_guarded"))
         self.command("go to Gatehouse")
         self.command("Matilda, guide the high track")
-        guard = self.command("Horace, arrange a guard")["messages"]
+        guard = self.command("Horace, arrange a guard for the wagons.")["messages"]
         self.assertIn("grain is guarded, not delivered", " ".join(guard))
 
     def test_guard_grain_followup_is_validated_persistent_and_not_delivery(self):
