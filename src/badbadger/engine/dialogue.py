@@ -41,7 +41,8 @@ class DialogueService:
             if aftermath_question and any(goal.get("status", "active") != "active" for goal in context.goals)
             else []
         )
-        response = self.backend.respond(context, player_input)
+        blocked_order = self._blackbarrow_order_feedback(npc_id, npc["name"], player["location_id"], player_input)
+        response = NPCResponse(blocked_order) if blocked_order else self.backend.respond(context, player_input)
         self._validate_response(response)
         response, protected_output = guard_response(self.repository, response)
         presented_dialogue = ("I haven't taken that action." if response.degraded and response.proposed_actions
@@ -199,6 +200,24 @@ class DialogueService:
                 },
             )
         return [f"{npc['name']}: \"{presented_dialogue}\"", *event_messages]
+
+    def _blackbarrow_order_feedback(self, npc_id: str, name: str, location: str, text: str) -> str | None:
+        if self.repository.scenario_id != "blackbarrow-north-road-0.1":
+            return None
+        if npc_id == "matilda" and location != "gatehouse" and requests_action(
+            text, npc_id, name, "Guide the high track",
+        ):
+            return "Return to the Gatehouse to give the convoy its orders."
+        if npc_id == "horace" and requests_action(
+            text, npc_id, name, "Arrange a guard for the grain",
+            ["arrange a guard for the grain wagons", "guard the grain", "secure the grain",
+             "protect the grain wagons", "secure what we leave behind"],
+        ):
+            if self.repository.get_fact("chapter", "outcome") != "high_track":
+                return "I can post a guard for the grain once we commit to the high-track plan."
+            if location != "gatehouse":
+                return "Return to the Gatehouse so I can post a guard for the grain."
+        return None
 
     @staticmethod
     def _interaction_requested(

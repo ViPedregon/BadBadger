@@ -65,6 +65,18 @@ class BlackbarrowTests(unittest.TestCase):
                 self.assertNotIn("decision_score", recap)
                 self.assertNotIn("Alden", recap)
 
+    def test_blocked_orders_explain_location_and_plan_prerequisite(self):
+        self.command("go to High Track")
+        self.command("examine ridge markers")
+        route = self.command("Matilda, guide the high track")["messages"]
+        guard = self.command("Horace, arrange a guard for the grain")["messages"]
+        self.assertIn("Return to the Gatehouse", " ".join(route))
+        self.assertIn("once we commit to the high-track plan", " ".join(guard))
+        self.assertNotIn("No movement was requested", " ".join(route + guard))
+        with GameRepository(self.path) as repository:
+            self.assertFalse(repository.get_fact("chapter", "resolved"))
+            self.assertIsNone(repository.get_fact("convoy", "grain_guarded"))
+
     def test_guard_grain_followup_is_validated_persistent_and_not_delivery(self):
         self.assertNotIn("arrange a guard", str(self.game.view()["guidance"]["suggestions"]))
         self.command("tell Horace arrange a guard for the grain")
