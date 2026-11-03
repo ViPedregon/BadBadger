@@ -66,6 +66,10 @@ game routes and browser assets still require the password.
 
 ## Backup and recovery commands
 
+For pulling the shared Render save onto a Windows PC, see
+[LOCAL-BACKUPS.md](LOCAL-BACKUPS.md). It covers the optional backup-only endpoint,
+encrypted local credential storage and hourly Windows task installation.
+
 The `badbadger-save` command is installed with the project. It copies committed
 SQLite state using the online backup API, checks database integrity and foreign
 keys, and checks the web save's revision against its turn receipts. It writes a

@@ -31,6 +31,9 @@
    Batch tester backup/restore now covers active and retired accounts with
    checksummed manifests and a tested archive/receipt recovery drill. Offsite
    transfer and scheduled deployment still require operational configuration.
+   Shared-save HTTPS download and a Windows hourly pull installer now support
+   offsite copies to a local PC. They require a separate Render backup token and
+   a successful live download before scheduling; live setup remains pending.
 7. **Small closed beta:** observe real sessions and improve confusing interactions
    before extending the campaign or adding arbitrary task planning.
 

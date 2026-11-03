@@ -6,6 +6,7 @@ import argparse
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 import json
+import hashlib
 import logging
 import os
 from pathlib import Path
@@ -13,16 +14,19 @@ import secrets
 import sqlite3
 import threading
 import time
+import tempfile
 from importlib.resources import files
 from urllib.parse import urlsplit
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
+from starlette.background import BackgroundTask
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from badbadger.service import RelayService, TurnConflict
+from badbadger.backup import snapshot
 from badbadger.testers import load_testers, validate_testers, tester_scope
 from badbadger.scenarios.catalog import CHAPTERS
 
@@ -58,14 +62,16 @@ class RateLimit:
 
     def __init__(self):
         self.events = defaultdict(deque)
+        self.expirations = {}
         self.lock = threading.Lock()
 
     def check(self, key: str, limit: int, window: int = 60):
         with self.lock:
             now = time.monotonic()
             for old in list(self.events):
-                if not self.events[old] or self.events[old][-1] <= now - window:
+                if self.expirations.get(old, 0) <= now:
                     del self.events[old]
+                    self.expirations.pop(old, None)
             if key not in self.events and len(self.events) >= 1024:
                 raise HTTPException(429, "Too many requests", headers={"Retry-After": "60"})
             entries = self.events[key]
@@ -74,10 +80,12 @@ class RateLimit:
             if len(entries) >= limit:
                 raise HTTPException(429, "Too many requests", headers={"Retry-After": "60"})
             entries.append(now)
+            self.expirations[key] = now + window
 
 
 def create_app(database: str | Path, password: str, origin: str, *, offline: bool = False, scenario: str = "relay_crisis",
-               testers: dict[str, str] | None = None, tester_save_dir: str | Path | None = None) -> FastAPI:
+               testers: dict[str, str] | None = None, tester_save_dir: str | Path | None = None,
+               backup_token: str | None = None) -> FastAPI:
     """Create one private game. These arguments are server configuration only."""
     parsed = urlsplit(origin)
     if (parsed.scheme not in {"https", "http"} or not parsed.hostname
@@ -89,9 +97,14 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
     if testers is None and (not isinstance(password, str) or len(password) < 24):
         raise ValueError("Set a web password of at least 24 characters")
     accounts = validate_testers(testers) if testers is not None else None
+    if backup_token is not None and (not isinstance(backup_token, str) or len(backup_token) < 32
+                                    or backup_token == password
+                                    or (accounts is not None and backup_token in accounts.values())):
+        raise ValueError("Backup token must be a separate secret of at least 32 characters")
     if accounts is not None and tester_save_dir is None:
         raise ValueError("Tester mode requires a persistent tester save directory")
     limiter = RateLimit()
+    backup_lock = threading.Lock()
 
     @asynccontextmanager
     async def lifespan(app):
@@ -177,6 +190,36 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
         # Platform probes get no game state, paths or version information.
         return {"status": "ok"}
 
+    @app.get("/api/backup")
+    def download_backup(request: Request):
+        # Deliberately separate from browser credentials and unavailable in
+        # tester mode: a tester must never download another player's world.
+        if backup_token is None or accounts is not None:
+            raise HTTPException(404, "Not found")
+        address = request.client.host if request.client else "unknown"
+        authorization = request.headers.get("authorization", "")
+        if not secrets.compare_digest(authorization.encode(), ("Bearer " + backup_token).encode()):
+            limiter.check("backup-auth:" + address, 20)
+            raise HTTPException(401, "Backup authentication required")
+        limiter.check("backup-download", 6, window=3600)
+        if not backup_lock.acquire(blocking=False):
+            raise HTTPException(503, "Backup is busy. Retry later.", headers={"Retry-After": "60"})
+        temporary = None
+        try:
+            temporary = tempfile.TemporaryDirectory(prefix="badbadger-download-")
+            target = snapshot(request.app.state.game.database, Path(temporary.name) / "shared.db")
+            with target.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            return FileResponse(target, media_type="application/octet-stream", filename="badbadger-shared.db",
+                                headers={"X-BadBadger-SHA256": digest},
+                                background=BackgroundTask(temporary.cleanup))
+        except Exception:
+            if temporary is not None:
+                temporary.cleanup()
+            raise
+        finally:
+            backup_lock.release()
+
     @app.get("/", dependencies=[Depends(authenticated)])
     def index():
         return Response(files("badbadger").joinpath("static/index.html").read_text(encoding="utf-8"), media_type="text/html")
@@ -256,7 +299,8 @@ def main():
         if args.host not in {"127.0.0.1", "localhost", "::1"} and urlsplit(origin).scheme != "https":
             raise ValueError("A public/container bind requires an explicitly configured HTTPS origin")
         app = create_app(args.save, password, origin, offline=args.offline, scenario=args.scenario,
-                         testers=load_testers(args.testers) if args.testers else None, tester_save_dir=args.tester_save_dir)
+                         testers=load_testers(args.testers) if args.testers else None, tester_save_dir=args.tester_save_dir,
+                         backup_token=os.environ.get("BADBADGER_BACKUP_TOKEN") or None)
     except ValueError as error:
         parser.error(str(error))
     # An HTTPS reverse proxy can forward to this loopback-only listener.
