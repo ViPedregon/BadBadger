@@ -90,6 +90,41 @@ class BlackbarrowTests(unittest.TestCase):
         guard = self.command("Horace, arrange a guard for the wagons.")["messages"]
         self.assertIn("grain is guarded, not delivered", " ".join(guard))
 
+    def test_model_interprets_paraphrases_and_engine_checks_order_state(self):
+        from unittest.mock import Mock
+        from badbadger.agents.npc import ActionProposal, NPCResponse
+
+        backend = self.game.npc_backend
+        def respond(context, text):
+            if "look after it" in text:
+                self.assertIn("guard_grain", context.interpretable_orders)
+                return NPCResponse("Which supplies do you want me to guard?")
+            if "watch over the carts" in text:
+                self.assertIn("guard_grain", context.interpretable_orders)
+                return NPCResponse("Done.", [ActionProposal("interact", {"action_id": "guard_grain"})])
+            if "shepherd the families" in text:
+                self.assertIn("high_track", context.interpretable_orders)
+                return NPCResponse("Done.", [ActionProposal("interact", {"action_id": "high_track"})])
+            return backend.respond(context, text)
+
+        self.game.npc_backend = Mock(wraps=backend)
+        self.game.npc_backend.respond.side_effect = respond
+        self.command("go to High Track")
+        route = "Matilda, shepherd the families over the ridge."
+        self.assertIn("Return to the Gatehouse", " ".join(self.command(route)["messages"]))
+        self.command("go to Gatehouse")
+        guard = "Horace, have your people watch over the carts."
+        self.assertIn("once we commit", " ".join(self.command(guard)["messages"]))
+        self.command(route)
+        ambiguous = self.command("Horace, look after it.")
+        self.assertIn("Which supplies", " ".join(ambiguous["messages"]))
+        self.command("Horace, don't watch over the carts.")
+        self.command("Horace, should we watch over the carts?")
+        with GameRepository(self.path) as repository:
+            self.assertIsNone(repository.get_fact("convoy", "grain_guarded"))
+        self.assertIn("grain is guarded, not delivered", " ".join(self.command(guard)["messages"]))
+        self.assertIn("already have a guard", " ".join(self.command(guard)["messages"]))
+
     def test_guard_grain_followup_is_validated_persistent_and_not_delivery(self):
         self.assertNotIn("arrange a guard", str(self.game.view()["guidance"]["suggestions"]))
         self.command("tell Horace arrange a guard for the grain")

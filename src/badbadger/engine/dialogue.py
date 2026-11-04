@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import re
 
 from badbadger.agents.context import NPCContextBuilder
@@ -9,7 +10,7 @@ from badbadger.agents.npc import ActionProposal, NPCBackend, NPCResponse
 from badbadger.db.repository import GameRepository
 from badbadger.engine.events import process_due_events
 from badbadger.engine.npc_actions import resolve_npc_proposal
-from badbadger.engine.consent import requests_action, requests_move
+from badbadger.engine.consent import request_body, requests_action, requests_move
 from badbadger.engine.knowledge import grounded_claim, guard_response, inspection_request
 
 
@@ -40,6 +41,12 @@ class DialogueService:
             for action in context.available_actions:
                 if action.get("kind") == "interact" and action.get("id") == "guard_grain":
                     action["request_phrases"] = [*action.get("request_phrases", []), *_GRAIN_GUARD_ALIASES]
+        if self.repository.scenario_id == "blackbarrow-north-road-0.1":
+            orders = {
+                "matilda": {"high_track": "Lead the families and medicine along the high track."},
+                "horace": {"guard_grain": "Post a guard for the grain wagons left behind."},
+            }
+            context = replace(context, interpretable_orders=orders.get(npc_id, {}))
         aftermath_question = bool(re.search(
             r"\bwhy\b|\bwhat now\b|\bhow do you feel\b|\bwhat happened\b|\boutcome\b",
             player_input, re.IGNORECASE,
@@ -56,6 +63,22 @@ class DialogueService:
             response = self._blackbarrow_order_response(context, player_input)
             if response is None:
                 response = self.backend.respond(context, player_input)
+        interpreted_order = False
+        if not response.degraded and len(response.proposed_actions) == 1:
+            proposal = response.proposed_actions[0]
+            action_id = proposal.parameters.get("action_id")
+            if (proposal.kind == "interact" and isinstance(action_id, str)
+                    and action_id in context.interpretable_orders):
+                body = request_body(player_input, npc_id, npc["name"])
+                if not body or re.search(r'["“”]|^(?:should|how|what|tell me|describe|suppose|imagine)\b', body):
+                    response = NPCResponse("Are you giving an order, or asking about the plan?")
+                else:
+                    feedback = self._blackbarrow_order_blocker(action_id, player["location_id"])
+                    response = NPCResponse(
+                        feedback or "Understood.",
+                        proposed_actions=[] if feedback else [proposal],
+                    )
+                    interpreted_order = feedback is None
         self._validate_response(response)
         response, protected_output = guard_response(self.repository, response)
         presented_dialogue = ("I haven't taken that action." if response.degraded and response.proposed_actions
@@ -70,7 +93,7 @@ class DialogueService:
                 event_messages=[]
                 proposal_results=[]
                 for proposal in response.proposed_actions:
-                    if proposal.kind == "interact" and not self._interaction_requested(
+                    if proposal.kind == "interact" and not interpreted_order and not self._interaction_requested(
                         context.available_actions, proposal.parameters.get("action_id"),
                         player_input,
                         npc_id, npc["name"],
@@ -231,17 +254,27 @@ class DialogueService:
     def _blackbarrow_order_feedback(self, npc_id: str, name: str, location: str, text: str) -> str | None:
         if self.repository.scenario_id != "blackbarrow-north-road-0.1":
             return None
-        if npc_id == "matilda" and location != "gatehouse" and requests_action(
-            text, npc_id, name, "Guide the high track",
-        ):
-            return "Return to the Gatehouse to give the convoy its orders."
+        if npc_id == "matilda" and requests_action(text, npc_id, name, "Guide the high track"):
+            return self._blackbarrow_order_blocker("high_track", location)
         if npc_id == "horace" and requests_action(
             text, npc_id, name, "Arrange a guard for the grain",
             [*_GRAIN_GUARD_ALIASES, "arrange a guard for the grain wagons", "guard the grain", "secure the grain",
              "protect the grain wagons", "secure what we leave behind"],
         ):
+            return self._blackbarrow_order_blocker("guard_grain", location)
+        return None
+
+    def _blackbarrow_order_blocker(self, action_id: str, location: str) -> str | None:
+        if action_id == "high_track":
+            if location != "gatehouse":
+                return "Return to the Gatehouse to give the convoy its orders."
+            if self.repository.get_fact("chapter", "outcome") == "high_track":
+                return "The convoy is already committed to the high track."
+        if action_id == "guard_grain":
             if self.repository.get_fact("chapter", "outcome") != "high_track":
                 return "I can post a guard for the grain once we commit to the high-track plan."
+            if self.repository.get_fact("convoy", "grain_guarded"):
+                return "The grain wagons already have a guard."
             if location != "gatehouse":
                 return "Return to the Gatehouse so I can post a guard for the grain."
         return None

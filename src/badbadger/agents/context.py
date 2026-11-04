@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import re
 from typing import Any
 
@@ -27,6 +27,7 @@ class NPCContext:
     parameters: dict[str, Any]
     available_actions: list[dict[str, Any]]
     interaction_mode: str = "conversation"
+    interpretable_orders: dict[str, str] = field(default_factory=dict)
 
 
 class NPCContextBuilder:
