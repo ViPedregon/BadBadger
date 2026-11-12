@@ -32,7 +32,7 @@ badbadger-save = "badbadger.backup:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-badbadger = ["db/schema.sql", "scenarios/*.json", "scenarios/characters/*.json", "static/*"]
+badbadger = ["db/schema.sql", "scenarios/*.json", "scenarios/characters/*.json", "static/*", "static/portraits/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

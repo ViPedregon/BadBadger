@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -235,6 +236,14 @@ def _validate(data: dict[str, Any]) -> None:
         parameters = item.get("parameters", {})
         if not isinstance(parameters, dict):
             raise ScenarioError(f"Parameters for {item['id']} must be an object")
+        weights = parameters.get("motivation_weights", {})
+        if not isinstance(weights, dict) or any(
+            not isinstance(key, str) or not key.strip()
+            or not isinstance(value, (int, float)) or isinstance(value, bool)
+            or not 0 <= value <= 1
+            for key, value in weights.items()
+        ):
+            raise ScenarioError("Motivation weights must map non-empty ids to strengths between 0 and 1")
         if not isinstance(item.get("appearance", {}), dict):
             raise ScenarioError(f"Appearance for character {item['id']} must be an object")
     if sum(item["kind"] == "player" for item in characters) != 1:
@@ -412,8 +421,28 @@ def _validate(data: dict[str, Any]) -> None:
             ):
                 raise ScenarioError(f"Invalid precondition for action {action['id']}")
         effects = action.get("effects", {})
+        advice = effects.get("plan_advice")
+        if advice is not None:
+            if not isinstance(advice, dict) or any(
+                not isinstance(advice.get(key), str) or not advice[key].strip()
+                for key in ("topic", "benefit", "cost", "acceptance_message")
+            ):
+                raise ScenarioError("Plan advice requires a public topic, benefit, cost and acceptance message")
         if "request_phrases" in effects:
             _validate_string_list(effects["request_phrases"], "Delegation request phrases")
+        order_response = effects.get("order_response")
+        if order_response is not None:
+            if not isinstance(order_response, dict):
+                raise ScenarioError("Order response must be an object")
+            for key in ("accept_score", "refuse_below"):
+                value = order_response.get(key)
+                if type(value) not in (int, float) or not math.isfinite(value):
+                    raise ScenarioError("Order response thresholds must be finite numbers")
+            if order_response["refuse_below"] > order_response["accept_score"]:
+                raise ScenarioError("Order refusal threshold exceeds acceptance threshold")
+            for key in ("condition_message", "refusal_message"):
+                if not isinstance(order_response.get(key), str) or not order_response[key].strip():
+                    raise ScenarioError("Order responses require public condition and refusal messages")
         decision = effects.get("decision", {})
         if not isinstance(decision, dict):
             raise ScenarioError(f"Decision policy for action {action['id']} must be an object")
@@ -423,6 +452,21 @@ def _validate(data: dict[str, Any]) -> None:
                 raise ScenarioError(
                     f"Decision {key} for action {action['id']} must be numeric"
                 )
+        motivation_factors = decision.get("motivation_factors", [])
+        if not isinstance(motivation_factors, list):
+            raise ScenarioError("Motivation factors must be a list")
+        actor = next(item for item in characters if item["id"] == action["character_id"])
+        weights = actor.get("parameters", {}).get("motivation_weights", {})
+        for factor in motivation_factors:
+            if (
+                not isinstance(factor, dict)
+                or not isinstance(factor.get("motivation_id"), str)
+                or factor["motivation_id"] not in weights
+                or not isinstance(factor.get("reason"), str) or not factor["reason"].strip()
+                or not isinstance(factor.get("impact"), (int, float))
+                or isinstance(factor["impact"], bool) or not math.isfinite(factor["impact"])
+            ):
+                raise ScenarioError("Invalid motivation factor or unknown actor motivation")
         factors = decision.get("belief_factors", [])
         if not isinstance(factors, list):
             raise ScenarioError(f"Belief factors for action {action['id']} must be a list")

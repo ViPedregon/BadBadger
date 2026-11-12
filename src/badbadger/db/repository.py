@@ -501,6 +501,7 @@ class GameRepository:
                     "label": row["label"],
                     "description": row["description"],
                     "request_phrases": effects.get("request_phrases", []),
+                    "discussion_topic": effects.get("plan_advice", {}).get("topic"),
                     **decision,
                 })
         return actions
@@ -527,6 +528,14 @@ class GameRepository:
                     f"{authored_change:+.2f} x certainty {certainty:.2f})."
                 )
         parameters = self.npc_parameters(character_id)
+        motivations = parameters.get("motivation_weights", {})
+        for factor in policy.get("motivation_factors", []):
+            strength = motivations.get(factor["motivation_id"], 0.0)
+            change = float(strength) * float(factor["impact"])
+            score += change
+            reasons.append(
+                f"{factor['reason']} ({change:+.2f}; motivation strength {strength:.2f})."
+            )
         for factor in policy.get("parameter_factors", []):
             actual = parameters.get(factor["parameter"])
             expected = factor["value"]
@@ -767,6 +776,63 @@ class GameRepository:
         message = f"{speaker['name']} tells {target['name']}: {subject_id}.{predicate} is {belief['value']!r}."
         return True, message if visible else ""
 
+    def player_order_response(self, character_id: str, action_id: str) -> dict[str, Any]:
+        """Evaluate willingness using the same state-based utility as autonomy.
+
+        Only authored public messages may leave this boundary. Decision reasons
+        can contain private biography and belong in developer diagnostics.
+        """
+        row = self.connection.execute(
+            "SELECT effects_json FROM npc_actions WHERE id=? AND character_id=?",
+            (action_id, character_id),
+        ).fetchone()
+        if row is None:
+            return {"status": "refuse", "message": "That order is unavailable."}
+        effects = json.loads(row["effects_json"])
+        policy = effects.get("order_response")
+        if policy is None:
+            return {"status": "accept", "message": ""}
+        decision = self._evaluate_action_decision(character_id, action_id, effects.get("decision", {}))
+        score = decision["decision_score"]
+        if score >= policy["accept_score"]:
+            status = "accept"
+            message = ""
+        elif score >= policy["refuse_below"]:
+            status = "condition"
+            message = policy["condition_message"]
+        else:
+            status = "refuse"
+            message = policy["refusal_message"]
+        return {"status": status, "message": message, **decision}
+
+    def discuss_plan(self, character_id: str, topic: str) -> str | None:
+        """Explain a public authored plan without proposing any action."""
+        public = set(self.scenario_presentation().get("public_action_ids", []))
+        available = {action["id"] for action in self.available_npc_actions(character_id)}
+        rows = self.connection.execute(
+            "SELECT id,effects_json FROM npc_actions WHERE character_id=?", (character_id,),
+        ).fetchall()
+        for row in rows:
+            if row["id"] not in public:
+                continue
+            effects = json.loads(row["effects_json"])
+            advice = effects.get("plan_advice")
+            if not advice or advice["topic"].casefold() != topic.casefold():
+                continue
+            if row["id"] not in available:
+                return "That plan is not available here now. We can discuss the options that remain."
+            willingness = self.player_order_response(character_id, row["id"])
+            relationship = next((item for item in self.relationships_for(character_id)
+                                 if item["target_id"] == self.get_player()["id"]), {})
+            if float(relationship.get("trust", 0.0)) < effects.get("player_trust_required", -1.0):
+                assessment = "I would need more trust in your judgment before accepting that commitment."
+            else:
+                assessment = (advice["acceptance_message"] if willingness["status"] == "accept"
+                              else willingness["message"])
+            return " ".join((advice["benefit"], advice["cost"], assessment,
+                             "We are discussing the plan; I have not committed to it."))
+        return None
+
     def apply_npc_action(
         self,
         character_id: str,
@@ -807,6 +873,10 @@ class GameRepository:
                 return False, (f"{character['name']} does not trust you enough to do that. "
                                "Ask about their concerns and build trust before requesting this commitment again. "
                                "No action was taken.")
+        if requested_by_player:
+            willingness = self.player_order_response(character_id, action_id)
+            if willingness["status"] != "accept":
+                return False, willingness["message"]
         for fact in effects.get("facts", []):
             self.set_fact(
                 fact["subject_id"], fact["predicate"], fact["value"],
@@ -1478,6 +1548,14 @@ class GameRepository:
         )
 
     def set_npc_parameters(self, character_id: str, parameters: dict[str, Any]) -> None:
+        weights = parameters.get("motivation_weights", {})
+        if not isinstance(weights, dict) or any(
+            not isinstance(key, str) or not key.strip()
+            or not isinstance(value, (int, float)) or isinstance(value, bool)
+            or not 0 <= value <= 1
+            for key, value in weights.items()
+        ):
+            raise ValueError("Motivation weights must map non-empty ids to strengths between 0 and 1")
         character = self.get_character(character_id)
         if character is None or character["kind"] != "npc":
             raise ValueError(f"NPC parameters require an NPC: {character_id}")

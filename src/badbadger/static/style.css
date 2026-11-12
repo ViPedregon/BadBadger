@@ -37,3 +37,33 @@ summary { cursor: pointer; }
 .composer label { margin-top: 0; }
 .composer footer { margin: 10px 0 0; }
 @media (max-width: 480px) { main { padding: 20px 14px 320px; } .composer { padding: 12px 14px; } }
+.character-section { margin: 28px 0; border-top: 1px solid #465448; padding-top: 20px; }
+.section-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; }
+.section-heading h2 { font: 1.9rem Georgia, serif; margin: 6px 0; }
+.section-heading p:last-child { color: #b4bdb2; font-size: .85rem; }
+#character-tabs { margin-bottom: 18px; }
+#character-tabs button[aria-pressed="true"] { background: #bed69b; color: #152013; }
+#character-profile { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; padding: 20px; background: #1a241e; border: 1px solid #465448; border-radius: 6px; }
+.character-portrait { position: relative; aspect-ratio: 3 / 4; align-self: start; border: 1px solid #66755b; border-radius: 4px; overflow: hidden; background: radial-gradient(ellipse at top, #3a4937, #151e19); }
+.character-portrait img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.portrait-placeholder { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; color: #c8d5b6; }
+.portrait-placeholder[hidden] { display: none; }
+.portrait-placeholder span { font: 3.5rem Georgia, serif; letter-spacing: .08em; }
+.portrait-placeholder small { color: #a7b19e; font-size: .75rem; }
+.character-body { min-width: 0; overflow-wrap: anywhere; line-height: 1.65; }
+.character-body > .eyebrow { margin-top: 0; }
+.character-body h3 { font: 1.7rem Georgia, serif; margin: 6px 0; }
+.character-body h4 { color: #d5e5bd; font-size: .95rem; margin-bottom: 6px; }
+.character-role { color: #b4bdb2; }
+.character-attributes { margin: 16px 0; }
+.character-attributes dt { font-size: .8rem; color: #adca8c; margin-top: 12px; }
+.character-attributes dd { margin: 2px 0 0; }
+.character-body ul { padding-left: 20px; margin-top: 6px; }
+.character-body details { margin-top: 20px; }
+summary:focus-visible { outline: 3px solid #f0d695; outline-offset: 3px; }
+@media (max-width: 600px) {
+  #character-profile { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 18px; }
+  .character-portrait { width: 150px; }
+  .section-heading { display: block; }
+  #character-tabs button { padding: 10px 12px; font-size: .9rem; }
+}

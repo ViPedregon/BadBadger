@@ -20,6 +20,11 @@ except ImportError:
     sync_playwright = None
 
 CHROMIUM = shutil.which("chromium") or shutil.which("chromium-browser")
+if not CHROMIUM and os.name == "nt":
+    CHROMIUM = next((str(path) for path in (
+        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Google/Chrome/Application/chrome.exe",
+        Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Microsoft/Edge/Application/msedge.exe",
+    ) if path.is_file()), None)
 
 
 @unittest.skipUnless(sync_playwright, "Install .[web,web-test] for browser checks")
@@ -106,6 +111,47 @@ class BrowserTests(unittest.TestCase):
         expect(self.page.locator("#phase")).to_contain_text("chapter is complete")
         expect(self.page.locator("#recap")).to_contain_text("rescue acknowledgment")
 
+    def test_character_cards_are_read_only_and_work_on_mobile(self):
+        self.page.locator("#chapter-selection").select_option("blackbarrow")
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator("#notice")).to_have_text("New game started. Your previous playthrough is archived.")
+        before = self.page.request.get(self.origin + "/api/game").json()
+        self.page.locator("#character-inspection > summary").click()
+        expect(self.page.locator("#character-tabs button")).to_have_count(3)
+        self.page.locator("#character-tabs").get_by_role("button", name="Matilda Ash").click()
+        expect(self.page.locator("#character-profile")).to_contain_text("Tracking")
+        expect(self.page.locator("#character-profile")).to_contain_text("Motivations")
+        expect(self.page.get_by_role("img", name="Portrait pending for Matilda Ash")).to_be_visible()
+        self.page.locator("#character-profile summary").click()
+        expect(self.page.locator("#character-profile")).to_contain_text("Heavy hooded cloak", ignore_case=True)
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.assertLessEqual(self.page.evaluate("document.documentElement.scrollWidth"), 390)
+        self.page.locator("#character-tabs").get_by_role("button", name="Captain Horace").click()
+        expect(self.page.locator("#character-profile h3")).to_have_text("Captain Horace")
+        self.page.locator("#refresh").click()
+        expect(self.page.locator("#notice")).to_have_text("Saved game loaded.")
+        expect(self.page.locator("#character-profile h3")).to_have_text("Captain Horace")
+        after = self.page.request.get(self.origin + "/api/game").json()
+        self.assertEqual(before["revision"], after["revision"])
+        self.assertEqual(before["status"], after["status"])
+
+    def test_discuss_suggestion_explains_plan_before_commitment(self):
+        self.page.locator("#chapter-selection").select_option("blackbarrow")
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator("#notice")).to_have_text("New game started. Your previous playthrough is archived.")
+        button = self.page.get_by_role("button", name="Discuss: controlled crossing · 1 min", exact=True)
+        button.click()
+        expect(self.page.locator("#command")).to_have_value("ask Captain Horace about controlled crossing")
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 0 minutes.")
+        self.page.locator("#send").click()
+        expect(self.page.locator("#notice")).to_have_text("Saved.")
+        expect(self.page.locator("#transcript")).to_contain_text("ties up household guards")
+        expect(self.page.locator("#transcript")).to_contain_text("I have not committed to it")
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 1 minute.")
+        expect(self.page.locator("#phase")).not_to_contain_text("irreversible decision has been made")
+
     def test_guidance_fills_commands_without_spending_time(self):
         expect(self.page.locator("#objective")).to_contain_text("Question the crew")
         self.page.get_by_text("How mission time works", exact=True).click()
@@ -137,7 +183,7 @@ class BrowserTests(unittest.TestCase):
         self.page.locator("#retry").click()
         expect(self.page.locator("#notice")).to_have_text("Saved.")
         expect(self.page.locator(".player")).to_have_count(1)
-        expect(self.page.locator("#status")).to_contain_text("Mission time: 1 minutes.")
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 1 minute.")
 
     def test_new_game_cancel_confirm_and_lost_response_recovery(self):
         self.command("go to Relay Chamber")
@@ -240,7 +286,7 @@ class BrowserTests(unittest.TestCase):
         other.locator("#command").fill("wait 2")
         other.locator("#send").click()
         expect(other.locator("#notice")).to_contain_text("Your turn was not submitted")
-        expect(other.locator("#status")).to_contain_text("Mission time: 1 minutes.")
+        expect(other.locator("#status")).to_contain_text("Mission time: 1 minute.")
         self.command('<img src=x onerror="window.badbadgerInjected=true">')
         self.assertFalse(self.page.evaluate("Boolean(window.badbadgerInjected)"))
         expect(self.page.locator("#transcript img")).to_have_count(0)

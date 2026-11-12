@@ -189,6 +189,7 @@ class RelayService:
                     "dialogue_mode": "ai" if self.backend_label.startswith("OpenAI") else "offline",
                     "guidance": self._app(repository).player_guidance(),
                     "player": self._app(repository).player_identity(),
+                    "characters": self._app(repository).character_profiles(),
                     "opening": json.loads(session["opening_json"]),
                     "status": self._app(repository).status(),
                     "archives": self._archive_list(repository),

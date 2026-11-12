@@ -57,7 +57,10 @@ class DialogueService:
             else []
         )
         blocked_order = self._blackbarrow_order_feedback(npc_id, npc["name"], player["location_id"], player_input)
-        if blocked_order:
+        discussion = self._plan_discussion(npc_id, npc["name"], player_input)
+        if discussion is not None:
+            response = NPCResponse(discussion)
+        elif blocked_order:
             response = NPCResponse(blocked_order)
         else:
             response = self._blackbarrow_order_response(context, player_input)
@@ -70,7 +73,7 @@ class DialogueService:
             if (proposal.kind == "interact" and isinstance(action_id, str)
                     and action_id in context.interpretable_orders):
                 body = request_body(player_input, npc_id, npc["name"])
-                if not body or re.search(r'["“”]|^(?:should|how|what|tell me|describe|suppose|imagine)\b', body):
+                if not body or re.search(r'["“”]|^(?:should|how|what|about|discuss|tell me|describe|suppose|imagine)\b', body):
                     response = NPCResponse("Are you giving an order, or asking about the plan?")
                 else:
                     feedback = self._blackbarrow_order_blocker(action_id, player["location_id"])
@@ -93,6 +96,11 @@ class DialogueService:
                 event_messages=[]
                 proposal_results=[]
                 for proposal in response.proposed_actions:
+                    character_decision = None
+                    if proposal.kind == "interact" and isinstance(proposal.parameters.get("action_id"), str):
+                        character_decision = self.repository.player_order_response(
+                            npc_id, proposal.parameters["action_id"],
+                        )
                     if proposal.kind == "interact" and not interpreted_order and not self._interaction_requested(
                         context.available_actions, proposal.parameters.get("action_id"),
                         player_input,
@@ -111,10 +119,16 @@ class DialogueService:
                         accepted,message=resolve_npc_proposal(
                             self.repository, npc_id, proposal, requested_by_player=True
                         )
-                    proposal_results.append({"accepted":accepted,"proposal":proposal.__dict__})
+                    proposal_results.append({
+                        "accepted": accepted, "proposal": proposal.__dict__,
+                        "character_decision": character_decision,
+                    })
                     if proposal.kind in {"interact", "move"} and not accepted:
-                        presented_dialogue = "I haven't taken that action."
-                    if message:
+                        presented_dialogue = (
+                            message if character_decision and character_decision["status"] != "accept"
+                            else "I haven't taken that action."
+                        )
+                    if message and message != presented_dialogue:
                         event_messages.append(message)
                 belief_results = []
                 updated_beliefs = set()
@@ -298,6 +312,18 @@ class DialogueService:
         if action is None:
             return False
         return requests_action(player_input, npc_id, npc_name, str(action["label"]), action.get("request_phrases", []))
+
+    def _plan_discussion(self, npc_id: str, name: str, text: str) -> str | None:
+        aliases = {npc_id.casefold(), name.casefold(), *name.casefold().split()}
+        names = "(?:" + "|".join(re.escape(alias) for alias in sorted(aliases, key=len, reverse=True)) + ")"
+        body = " ".join(text.casefold().strip().split())
+        body = re.sub(r"^(?:(?:ask|tell)\s+)?" + names + r"\b[,:]?\s*", "", body)
+        match = re.fullmatch(
+            r"(?:about|discuss|what do you think (?:of|about)|what concerns you about)\s+(?:the\s+)?(.+?)[?.!]*", body,
+        )
+        if match is None:
+            return None
+        return self.repository.discuss_plan(npc_id, match[1])
 
     @staticmethod
     def _validate_response(response: NPCResponse) -> None:

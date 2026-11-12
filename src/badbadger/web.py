@@ -234,6 +234,17 @@ def create_app(database: str | Path, password: str, origin: str, *, offline: boo
             content = content.replace("const playerScope = null;", "const playerScope = " + json.dumps(request.state.player_scope) + ";")
         return Response(content, media_type=allowed[name])
 
+    @app.get("/assets/portraits/{name}", dependencies=[Depends(authenticated)])
+    def portrait(name: str):
+        stem, separator, extension = name.rpartition(".")
+        media = {"png": "image/png", "webp": "image/webp", "jpg": "image/jpeg"}
+        if not separator or not stem or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789_" for c in stem) or extension not in media:
+            raise HTTPException(404, "Not found")
+        resource = files("badbadger").joinpath("static", "portraits", name)
+        if not resource.is_file():
+            raise HTTPException(404, "Not found")
+        return Response(resource.read_bytes(), media_type=media[extension])
+
     @app.get("/api/game", dependencies=[Depends(authenticated)])
     def game(request: Request):
         return request.state.game.view()

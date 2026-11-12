@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from importlib.resources import as_file, files
 
 from badbadger.agents.intent import (
@@ -79,7 +80,7 @@ class GameApplication:
             location["description"],
             "Here: " + (", ".join(item["name"] for item in visible) or "no one else"),
             "Exits: " + (", ".join(item["name"] for item in exits) or "none"),
-            f"Mission time: {self.repository.current_time} minutes.",
+            f"Mission time: {self.repository.current_time} {'minute' if self.repository.current_time == 1 else 'minutes'}.",
             f"Mission status: {self.repository.simulation_status}.",
         ]
 
@@ -126,6 +127,10 @@ class GameApplication:
             # arbitrary scenario actions, scores, preconditions or private goals.
             for action in self.repository.available_npc_actions(npc["id"]):
                 if self.repository.scenario_id == "relay-crisis-0.1" or action["id"] in public_actions:
+                    if action.get("discussion_topic"):
+                        suggestions.append({"command": f"ask {npc['name']} about {action['discussion_topic']}",
+                                            "label": f"Discuss: {action['discussion_topic']} · 1 min",
+                                            "consequential": False})
                     suggestions.append({"command": f"tell {npc['name']} {action['label'].lower()}",
                                         "label": f"Request: {action['label']} · irreversible if accepted",
                                         "consequential": True})
@@ -166,7 +171,7 @@ class GameApplication:
         if not ended and not consequences:
             return ["The chapter is still unfolding. No decisive action has been recorded in your view yet."]
         lines = ["=== Chapter complete ===" if ended else "=== Decision aftermath ===",
-                 f"Mission time: {self.repository.current_time} minutes.", "What you witnessed:"]
+                 f"Mission time: {self.repository.current_time} {'minute' if self.repository.current_time == 1 else 'minutes'}.", "What you witnessed:"]
         lines.extend(item["summary"] for item in consequences)
         if not consequences:
             lines.append("You did not record the decisive action firsthand. Your journal and saved conversations contain what you learned.")
@@ -235,6 +240,44 @@ class GameApplication:
                 "background": [fragment["summary"] for fragment in canon.get("biography", [])
                                if fragment["visibility"] == "public" and fragment["awareness"] == "conscious"
                                and not self.repository.contains_protected_text(fragment["summary"])]}
+
+    def character_profiles(self) -> list[dict]:
+        """Player-facing dossier fields, never live NPC decision state."""
+        traits = ("temperament", "humor", "trust_style", "decision_style",
+                  "strengths", "limitations", "defining_question")
+        appearance_fields = ("age", "build", "clothing", "accessories", "weapon", "ceremonial_attire")
+        def safe(text):
+            return isinstance(text, str) and not self.repository.contains_protected_text(text)
+
+        profiles = []
+        for actor in [self.repository.get_player(), *self.repository.list_npcs()]:
+            identity = self.repository.character_identity(actor["id"]) or {}
+            canon = self.repository.character_canon(actor["id"]) or {}
+            appearance = self.repository.appearance_for(actor["id"], "character")
+            personality = identity.get("personality", {})
+            # Only stable identity ids become asset names, never input paths.
+            stable_id = identity.get("identity_id", "")
+            portrait = None
+            if re.fullmatch(r"[a-z][a-z0-9_]*", stable_id):
+                for extension in ("png", "webp", "jpg"):
+                    filename = f"{stable_id}.{extension}"
+                    if files("badbadger").joinpath("static", "portraits", filename).is_file():
+                        portrait = f"/assets/portraits/{filename}"
+                        break
+            role = canon.get("role") or appearance.get("role", "")
+            profiles.append({
+                "id": actor["id"], "name": actor["name"],
+                "is_player": actor["kind"] == "player", "portrait": portrait,
+                "role": role if safe(role) else "",
+                "attributes": {key: personality[key] for key in traits if safe(personality.get(key))},
+                "motivations": [text for text in identity.get("motivations", []) if safe(text)],
+                "appearance": {key: appearance[key] for key in appearance_fields if safe(appearance.get(key))},
+                "values": [text for text in canon.get("values", []) if safe(text)],
+                "background": [fragment["summary"] for fragment in canon.get("biography", [])
+                               if fragment["visibility"] == "public" and fragment["awareness"] == "conscious"
+                               and safe(fragment["summary"])],
+            })
+        return profiles
 
     def character_card(self) -> list[str]:
         identity = self.player_identity()

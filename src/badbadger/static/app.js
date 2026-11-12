@@ -15,6 +15,8 @@ let revision = null;
 let pending = null;
 let busy = false;
 let storageAvailable = true;
+let selectedCharacter = null;
+let characterProfiles = [];
 try { pending = JSON.parse(localStorage.getItem(pendingKey) || "null"); }
 catch (_) { storageAvailable = false; }
 
@@ -67,6 +69,11 @@ async function load() {
   document.querySelector("#dialogue-mode").textContent = view.dialogue_mode === "ai"
     ? "AI dialogue is configured." : "Offline dialogue: try the commands in help.";
   document.querySelector("#status").textContent = view.status.join("\n");
+  characterProfiles = view.characters || [];
+  if (!characterProfiles.some(character => character.id === selectedCharacter)) {
+    selectedCharacter = characterProfiles[0]?.id || null;
+  }
+  renderCharacters();
   const guidance = view.guidance;
   if (guidance) {
     document.querySelector("#objective").textContent = `Objective: ${guidance.objective}`;
@@ -112,6 +119,68 @@ async function load() {
   });
   transcript.scrollTop = transcript.scrollHeight;
 }
+function renderCharacters() {
+  const tabs = document.querySelector("#character-tabs");
+  tabs.replaceChildren();
+  characterProfiles.forEach(character => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = character.name;
+    button.setAttribute("aria-pressed", String(character.id === selectedCharacter));
+    button.addEventListener("click", () => {
+      selectedCharacter = character.id;
+      renderCharacters();
+      document.querySelector("#character-tabs button[aria-pressed='true']").focus();
+    });
+    tabs.append(button);
+  });
+  const panel = document.querySelector("#character-profile");
+  panel.replaceChildren();
+  const character = characterProfiles.find(item => item.id === selectedCharacter);
+  if (!character) return;
+  const create = (tag, text, className) => {
+    const element = document.createElement(tag);
+    if (text) element.textContent = text;
+    if (className) element.className = className;
+    return element;
+  };
+  const portrait = create("div", "", "character-portrait");
+  const placeholder = create("div", "", "portrait-placeholder");
+  placeholder.setAttribute("role", "img");
+  placeholder.setAttribute("aria-label", `Portrait pending for ${character.name}`);
+  placeholder.append(create("span", character.name.split(/\s+/).map(word => word[0]).slice(0, 2).join("")), create("small", "Portrait to come"));
+  portrait.append(placeholder);
+  if (character.portrait) {
+    const img = document.createElement("img");
+    img.src = character.portrait;
+    img.alt = `Portrait of ${character.name}`;
+    img.addEventListener("load", () => { placeholder.hidden = true; });
+    img.addEventListener("error", () => { img.remove(); placeholder.hidden = false; });
+    portrait.append(img);
+  }
+  const body = create("div", "", "character-body");
+  body.append(create("p", character.is_player ? "YOUR CHARACTER" : "COMPANION", "eyebrow"), create("h3", character.name), create("p", character.role, "character-role"));
+  const labels = key => key.replaceAll("_", " ").replace(/^./, letter => letter.toUpperCase());
+  const attributes = create("dl", "", "character-attributes");
+  Object.entries(character.attributes).forEach(([key, value]) => attributes.append(create("dt", labels(key)), create("dd", value)));
+  body.append(attributes);
+  if (character.motivations.length) {
+    body.append(create("h4", "Motivations"));
+    const list = create("ul");
+    character.motivations.forEach(text => list.append(create("li", text)));
+    body.append(list);
+  }
+  if (character.values.length) body.append(create("h4", "Values"), create("p", character.values.join(" · ")));
+  const details = create("details");
+  details.append(create("summary", "Appearance & background"));
+  const appearance = create("dl", "", "character-attributes");
+  Object.entries(character.appearance).forEach(([key, value]) => appearance.append(create("dt", labels(key)), create("dd", value)));
+  details.append(appearance);
+  character.background.forEach(text => details.append(create("p", text)));
+  body.append(details);
+  panel.append(portrait, body);
+}
+
 function clearPending() {
   localStorage.removeItem(pendingKey);
   pending = null;

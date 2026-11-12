@@ -137,3 +137,82 @@ context, public player cards, strict schema/path validation and rejection of
 unprovided production lore. The existing conversation/privacy, browser,
 new-game, backup/restore and Relay Crisis outcome checks remain in the suite.
 Package checks verify that installed builds include the three profile files.
+# Player-order decisions
+
+An NPC action can define an optional `effects.order_response` policy with
+`accept_score`, `refuse_below`, `condition_message` and `refusal_message`.
+The engine evaluates the action's existing `decision` factors against current
+character state. Scores at or above acceptance execute the order. Intermediate
+scores produce the authored condition, and lower scores produce the authored
+refusal. A condition leaves the action available for a later request after the
+relevant state changes. Location, prerequisites and trust gates still apply.
+
+Public replies use only authored messages. Full scores and decision reasons are
+recorded in the private dialogue action history, where biography influences can
+be inspected without disclosing them to the player.
+
+Blackbarrow's route and guard orders use goals, beliefs, trust and authored
+personality parameters. Their weights are initial design choices for playtesting.
+Existing saves retain their scenario policies. Start a new Blackbarrow game to
+exercise these new policies. Actions without an order-response policy retain
+their previous acceptance rules.
+
+## Weighted motivations
+
+Chapter parameters can define `motivation_weights`, mapping stable motivation
+ids to strengths from 0 to 1. A decision's `motivation_factors` lists
+`motivation_id`, signed `impact`, and a private diagnostic `reason`. The score
+adds strength times impact, so a motivation can favor one plan and oppose
+another. Unknown motivation references, invalid strengths, and non-finite
+impacts are rejected before scenario creation. Runtime parameter updates also
+validate strengths. These weights are explicit mechanical interpretations of
+the dossiers, not automatically inferred from their prose or new biography.
+
+Matilda weighs reliable field intelligence and independent judgment. Horace
+weighs convoy protection against preserving household readiness: a crossing or
+grain guard spends guards, while holding the convoy preserves readiness at the
+cost of supplies and delay. All four North Road actions now use character
+decisions for player orders and autonomous choices. Their autonomous minimum
+equals their order acceptance threshold, preventing an independent action from
+bypassing a condition the character would place on the same order.
+
+Weights persist with NPC parameters in saves and backups. They are authored
+defaults; conversation does not rewrite them. Public responses remain authored
+and do not disclose scores or private reasons. All initial plans remain viable;
+the weights and thresholds need playtesting. Start a new Blackbarrow game to
+load these expanded policies; existing games keep their scenario snapshot.
+
+## Player character section and portraits
+
+The browser's Characters section lets the player inspect each member of the
+cast without submitting a turn. Cards show role, personality, strengths,
+limitations, motivations, values, appearance, and public conscious biography.
+They use saved identity snapshots rather than live NPC parameters. Hidden goals,
+beliefs, private biography, author notes, and decision scores are not included.
+
+Portraits are optional presentation assets in `src/badbadger/static/portraits`.
+Use `victor_gravenholt.png`, `matilda_ash.png`, and `horace.png` (WebP and JPG
+also work). A 3:4 crop fits the card. Initials appear until artwork is supplied;
+adding an image requires no new game. Portrait files are packaged with the app
+and served behind its existing authentication.
+
+## Discussing plans
+
+North Road suggestions now offer a Discuss command beside each currently
+available public plan. For example, `ask Horace about controlled crossing` or
+`Matilda, what concerns you about the high track?` returns authored benefits,
+costs, and the companion's current willingness. Trust and willingness are
+rechecked for every discussion. A condition or refusal uses the same public
+response as an order; private score reasons stay in diagnostics.
+
+This response works without a model and never proposes actions or changes
+beliefs, motivation weights, or trust. Conversation still spends one mission
+minute, so scheduled events and independent companion behavior continue as
+normal. Clicking a Discuss suggestion only fills the input; Send starts the
+conversation. A separate explicit request is required to commit the plan.
+Unavailable plans receive a short availability reply. Existing saves retain
+their scenario snapshots, so start a new Blackbarrow game to load plan advice.
+
+Authors define `effects.plan_advice` with non-empty `topic`, `benefit`, `cost`,
+and `acceptance_message` strings. Advice is exposed only for actions listed in
+the scenario's `public_action_ids`; it does not publish arbitrary action data.

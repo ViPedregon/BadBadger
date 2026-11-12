@@ -116,7 +116,12 @@
         "first_decision_after_minutes": 24,
         "decision_cooldown_minutes": 4,
         "situation_advice": "The high track can take people and hand-carried medical supplies, not the loaded wagons. Examine ridge markers if you want to see the ground yourself. We issue a final plan at the Gatehouse.",
-        "private_party_familiarity": "This chapter has only the three established companions as present characters. In their private exchanges Horace calls Matilda Tracks, while Victor and Matilda call Horace Bear; he generally hears it. Use affectionate familiarity rather than new-acquaintance distrust. Do not broadcast private forms of address to strangers."
+        "private_party_familiarity": "This chapter has only the three established companions as present characters. In their private exchanges Horace calls Matilda Tracks, while Victor and Matilda call Horace Bear; he generally hears it. Use affectionate familiarity rather than new-acquaintance distrust. Do not broadcast private forms of address to strangers.",
+        "independent_field_judgment": true,
+        "motivation_weights": {
+          "reliable_field_intelligence": 1.0,
+          "independent_judgment": 1.0
+        }
       },
       "goals": [
         {
@@ -164,7 +169,12 @@
         "first_decision_after_minutes": 28,
         "decision_cooldown_minutes": 4,
         "situation_advice": "A controlled crossing can bring the wagons and their cargo through one at a time, but it commits household guards and leaves little margin. Holding the convoy at the Gatehouse avoids that risk but consumes stores and delays the supplies. Examine causeway ruts for the crossing and the convoy petition for the needs. Final instructions belong at the Gatehouse.",
-        "private_party_familiarity": "Within the established trio, privately address Matilda as Tracks when appropriate. Victor and Matilda sometimes tease you with Bear; you generally hear perfectly well. This is affectionate older-sibling banter, not a public introduction or a fatherly relationship."
+        "private_party_familiarity": "Within the established trio, privately address Matilda as Tracks when appropriate. Victor and Matilda sometimes tease you with Bear; you generally hear perfectly well. This is affectionate older-sibling banter, not a public introduction or a fatherly relationship.",
+        "security_commitment_caution": true,
+        "motivation_weights": {
+          "protect_convoy": 1.0,
+          "preserve_readiness": 1.0
+        }
       },
       "goals": [
         {
@@ -376,7 +386,70 @@
             }
           }
         ],
-        "visible_message": "Horace organizes the controlled crossing. The families, grain and medical supplies reach the Blackbarrow side, but household guards are tied up at the damaged road and the passage uses the last good light. The immediate delivery is secured at the cost of spare security capacity."
+        "visible_message": "Horace organizes the controlled crossing. The families, grain and medical supplies reach the Blackbarrow side, but household guards are tied up at the damaged road and the passage uses the last good light. The immediate delivery is secured at the cost of spare security capacity.",
+        "order_response": {
+          "accept_score": 1.0,
+          "refuse_below": 0.3,
+          "condition_message": "Before I commit guards, I need confidence that a controlled crossing is practical. Let us examine the causeway ruts.",
+          "refusal_message": "I cannot justify committing guards to that crossing with my current priorities and assessment."
+        },
+        "decision": {
+          "base_score": -0.1,
+          "minimum_score": 1.0,
+          "motivation_factors": [
+            {
+              "motivation_id": "protect_convoy",
+              "impact": 0.4,
+              "reason": "Protecting the convoy matters."
+            },
+            {
+              "motivation_id": "preserve_readiness",
+              "impact": -0.2,
+              "reason": "Weighs the effect on household readiness."
+            }
+          ],
+          "goal_factors": [
+            {
+              "goal_id": "protect_convoy",
+              "score_per_priority": 0.2,
+              "reason": "Duty to protect the convoy."
+            }
+          ],
+          "relationship_factors": [
+            {
+              "target_id": "victor",
+              "metric": "trust",
+              "operator": "gte",
+              "value": 0.6,
+              "score": 0.3,
+              "reason": "Trust in Victor's judgment."
+            }
+          ],
+          "belief_factors": [
+            {
+              "subject_id": "causeway",
+              "predicate": "requires_single_wagons",
+              "equals": true,
+              "min_confidence": 0.8,
+              "score": 0.3,
+              "reason": "Believes a controlled wagon sequence is practical."
+            },
+            {
+              "subject_id": "causeway",
+              "predicate": "requires_single_wagons",
+              "equals": false,
+              "min_confidence": 0.8,
+              "score": -1.2,
+              "reason": "Does not believe the proposed sequence fits the crossing."
+            }
+          ]
+        },
+        "plan_advice": {
+          "topic": "controlled crossing",
+          "benefit": "A controlled crossing could bring the families, medicine and grain through together.",
+          "cost": "It ties up household guards and uses the last good light. One wagon at a time, with guides; I want a practical sequence, not a clever gamble.",
+          "acceptance_message": "On my current assessment, I would oversee that crossing if you order it."
+        }
       }
     },
     {
@@ -484,7 +557,79 @@
             }
           }
         ],
-        "visible_message": "Matilda marks out the high track and arranges passage for the families and hand-carried medical supplies. The people reach shelter without risking the damaged wagon road, but the grain wagons remain on the wrong side and another delivery arrangement will be needed."
+        "visible_message": "Matilda marks out the high track and arranges passage for the families and hand-carried medical supplies. The people reach shelter without risking the damaged wagon road, but the grain wagons remain on the wrong side and another delivery arrangement will be needed.",
+        "order_response": {
+          "accept_score": 1.0,
+          "refuse_below": 0.3,
+          "condition_message": "I need to be confident the ridge is passable on foot before I lead the families. Let us inspect the ridge markers.",
+          "refusal_message": "I cannot justify leading the families along that route with what I currently believe."
+        },
+        "decision": {
+          "base_score": -0.3,
+          "minimum_score": 1.0,
+          "goal_factors": [
+            {
+              "goal_id": "find_passage",
+              "score_per_priority": 0.2,
+              "reason": "Duty to find safe passage."
+            }
+          ],
+          "belief_factors": [
+            {
+              "subject_id": "high_track",
+              "predicate": "passable_on_foot",
+              "equals": true,
+              "min_confidence": 0.8,
+              "score": 0.4,
+              "reason": "Confidence in safe footing."
+            },
+            {
+              "subject_id": "high_track",
+              "predicate": "passable_on_foot",
+              "equals": false,
+              "min_confidence": 0.8,
+              "score": -1.0,
+              "reason": "Believes the route is unsafe for the families."
+            }
+          ],
+          "relationship_factors": [
+            {
+              "target_id": "victor",
+              "metric": "trust",
+              "operator": "gte",
+              "value": 0.6,
+              "score": 0.3,
+              "reason": "Trust in Victor's judgment."
+            }
+          ],
+          "parameter_factors": [
+            {
+              "parameter": "independent_field_judgment",
+              "operator": "equals",
+              "value": true,
+              "score": 0.1,
+              "reason": "Exercises independent field judgment."
+            }
+          ],
+          "motivation_factors": [
+            {
+              "motivation_id": "reliable_field_intelligence",
+              "impact": 0.1,
+              "reason": "Values reliable field intelligence."
+            },
+            {
+              "motivation_id": "independent_judgment",
+              "impact": 0.1,
+              "reason": "Values independent field judgment."
+            }
+          ]
+        },
+        "plan_advice": {
+          "topic": "high track",
+          "benefit": "The high track can get the families and hand-carried medicine to shelter.",
+          "cost": "Loaded grain wagons cannot follow. Someone must account for what we leave behind. I care about sound footing, not how reassuring a route sounds.",
+          "acceptance_message": "On my current assessment, I would guide the families if you order it."
+        }
       }
     },
     {
@@ -592,7 +737,62 @@
             }
           }
         ],
-        "visible_message": "Horace holds the convoy at the Gatehouse and arranges shelter. No one is sent onto uncertain ground in fading light, but food and fuel come out of household stores and the grain and medical deliveries are delayed."
+        "visible_message": "Horace holds the convoy at the Gatehouse and arranges shelter. No one is sent onto uncertain ground in fading light, but food and fuel come out of household stores and the grain and medical deliveries are delayed.",
+        "order_response": {
+          "accept_score": 1.0,
+          "refuse_below": 0.3,
+          "condition_message": "Before holding everyone here, I need confidence that the delay and use of stores are justified. Let us examine the convoy petition.",
+          "refusal_message": "I cannot justify holding the convoy with my current priorities and assessment."
+        },
+        "decision": {
+          "base_score": 0.2,
+          "minimum_score": 1.0,
+          "motivation_factors": [
+            {
+              "motivation_id": "protect_convoy",
+              "impact": 0.2,
+              "reason": "Protecting the convoy matters."
+            },
+            {
+              "motivation_id": "preserve_readiness",
+              "impact": 0.2,
+              "reason": "Weighs the effect on household readiness."
+            }
+          ],
+          "goal_factors": [
+            {
+              "goal_id": "protect_convoy",
+              "score_per_priority": 0.2,
+              "reason": "Duty to protect the convoy."
+            }
+          ],
+          "relationship_factors": [
+            {
+              "target_id": "victor",
+              "metric": "trust",
+              "operator": "gte",
+              "value": 0.6,
+              "score": 0.3,
+              "reason": "Trust in Victor's judgment."
+            }
+          ],
+          "belief_factors": [
+            {
+              "subject_id": "holding",
+              "predicate": "delays_supplies",
+              "equals": true,
+              "min_confidence": 0.8,
+              "score": -0.3,
+              "reason": "Recognizes the cost of delaying supplies."
+            }
+          ]
+        },
+        "plan_advice": {
+          "topic": "holding the convoy",
+          "benefit": "Holding the convoy avoids a hurried crossing and preserves our guards for other duties.",
+          "cost": "The families use gatehouse stores, and both grain and medicine are delayed. Keeping the guards free does not make the delay harmless.",
+          "acceptance_message": "On my current assessment, I would hold the convoy if you order it."
+        }
       }
     },
     {
@@ -644,7 +844,79 @@
           "secure the grain",
           "protect the grain wagons",
           "secure what we leave behind"
-        ]
+        ],
+        "order_response": {
+          "accept_score": 1.0,
+          "refuse_below": 0.3,
+          "condition_message": "I need to understand the danger to these wagons before committing household guards. Let us examine the convoy petition.",
+          "refusal_message": "I cannot justify committing household guards to those wagons with what I currently believe."
+        },
+        "decision": {
+          "base_score": 0.3,
+          "minimum_score": 1.0,
+          "goal_factors": [
+            {
+              "goal_id": "protect_convoy",
+              "score_per_priority": 0.2,
+              "reason": "Duty to protect the convoy."
+            }
+          ],
+          "belief_factors": [
+            {
+              "subject_id": "holding",
+              "predicate": "delays_supplies",
+              "equals": true,
+              "min_confidence": 0.8,
+              "score": 0.4,
+              "reason": "Supplies left waiting need protection."
+            },
+            {
+              "subject_id": "holding",
+              "predicate": "delays_supplies",
+              "equals": false,
+              "min_confidence": 0.8,
+              "score": -1.0,
+              "reason": "Believes the waiting supplies do not need this commitment."
+            }
+          ],
+          "relationship_factors": [
+            {
+              "target_id": "victor",
+              "metric": "trust",
+              "operator": "gte",
+              "value": 0.6,
+              "score": 0.3,
+              "reason": "Trust in Victor's judgment."
+            }
+          ],
+          "parameter_factors": [
+            {
+              "parameter": "security_commitment_caution",
+              "operator": "equals",
+              "value": true,
+              "score": -0.1,
+              "reason": "Weighs the commitment of household guards carefully."
+            }
+          ],
+          "motivation_factors": [
+            {
+              "motivation_id": "protect_convoy",
+              "impact": 0.4,
+              "reason": "Wants to protect the convoy and its supplies."
+            },
+            {
+              "motivation_id": "preserve_readiness",
+              "impact": -0.2,
+              "reason": "Committing guards reduces household readiness."
+            }
+          ]
+        },
+        "plan_advice": {
+          "topic": "grain guard",
+          "benefit": "A guard would protect the grain wagons while the families and medicine take the high track.",
+          "cost": "Those guards cannot serve elsewhere. The grain would be guarded, not delivered; we still owe the wagoners a way forward.",
+          "acceptance_message": "On my current assessment, I would post that guard if you order it."
+        }
       }
     }
   ],
