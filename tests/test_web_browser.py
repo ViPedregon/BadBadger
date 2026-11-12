@@ -152,6 +152,28 @@ class BrowserTests(unittest.TestCase):
         expect(self.page.locator("#status")).to_contain_text("Mission time: 1 minute.")
         expect(self.page.locator("#phase")).not_to_contain_text("irreversible decision has been made")
 
+    def test_character_card_starts_a_conversation_only_after_send(self):
+        self.page.locator("#chapter-selection").select_option("blackbarrow")
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator("#notice")).to_have_text("New game started. Your previous playthrough is archived.")
+        self.page.locator("#character-inspection > summary").click()
+        self.page.locator("#character-tabs").get_by_role("button", name="Matilda Ash").click()
+        card = self.page.locator("#character-profile")
+        expect(card).to_contain_text("Here · ready to talk")
+        card.get_by_role("button", name="Discuss high track · 1 min", exact=True).click()
+        expect(self.page.locator("#command")).to_have_value("ask Matilda Ash about high track")
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 0 minutes.")
+        expect(self.page.locator(".player")).to_have_count(0)
+        self.page.locator("#send").click()
+        expect(self.page.locator("#notice")).to_have_text("Saved.")
+        expect(self.page.locator("#transcript")).to_contain_text("Loaded grain wagons cannot follow")
+        expect(self.page.locator("#status")).to_contain_text("Mission time: 1 minute.")
+        expect(card.locator("h3")).to_have_text("Matilda Ash")
+        self.command("go to High Track")
+        expect(card.get_by_role("button", name="Discuss high track · 1 min")).to_have_count(0)
+        expect(card.get_by_role("button", name="Ask about priorities · 1 min")).to_be_visible()
+
     def test_guidance_fills_commands_without_spending_time(self):
         expect(self.page.locator("#objective")).to_contain_text("Question the crew")
         self.page.get_by_text("How mission time works", exact=True).click()

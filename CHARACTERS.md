@@ -196,6 +196,16 @@ also work). A 3:4 crop fits the card. Initials appear until artwork is supplied;
 adding an image requires no new game. Portrait files are packaged with the app
 and served behind its existing authentication.
 
+Character cards also show whether a companion is here, elsewhere, travelling,
+or unavailable. They do not reveal offscreen locations or travel destinations.
+When conversation is possible, cards offer a priority question and discussions
+of currently available public plans. After a decision they offer an outcome
+question instead; finished chapters retain inspection without conversation
+buttons. Buttons fill the command input, and Send starts the one-minute
+conversation. The server rechecks presence and prerequisites when it executes
+the command. No new game is required for these card controls, although older
+scenario snapshots may not contain plan-discussion topics.
+
 ## Discussing plans
 
 North Road suggestions now offer a Discuss command beside each currently

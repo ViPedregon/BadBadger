@@ -55,6 +55,9 @@ summary { cursor: pointer; }
 .character-body h3 { font: 1.7rem Georgia, serif; margin: 6px 0; }
 .character-body h4 { color: #d5e5bd; font-size: .95rem; margin-bottom: 6px; }
 .character-role { color: #b4bdb2; }
+.character-availability { color: #e4c681; font-size: .9rem; }
+.character-conversation-hint { color: #b4bdb2; font-size: .8rem; }
+.character-conversations button { padding: 9px 12px; font-size: .9rem; text-align: left; }
 .character-attributes { margin: 16px 0; }
 .character-attributes dt { font-size: .8rem; color: #adca8c; margin-top: 12px; }
 .character-attributes dd { margin: 2px 0 0; }

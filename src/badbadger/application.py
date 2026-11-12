@@ -250,7 +250,9 @@ class GameApplication:
             return isinstance(text, str) and not self.repository.contains_protected_text(text)
 
         profiles = []
-        for actor in [self.repository.get_player(), *self.repository.list_npcs()]:
+        player = self.repository.get_player()
+        public_actions = set(self.repository.scenario_presentation().get("public_action_ids", []))
+        for actor in [player, *self.repository.list_npcs()]:
             identity = self.repository.character_identity(actor["id"]) or {}
             canon = self.repository.character_canon(actor["id"]) or {}
             appearance = self.repository.appearance_for(actor["id"], "character")
@@ -265,9 +267,37 @@ class GameApplication:
                         portrait = f"/assets/portraits/{filename}"
                         break
             role = canon.get("role") or appearance.get("role", "")
+            conversation_options = []
+            if actor["kind"] == "player":
+                availability = "player"
+            elif not actor["active"]:
+                availability = "unavailable"
+            elif self.repository.simulation_status != "active":
+                availability = "ended"
+            elif actor["location_id"] != player["location_id"]:
+                availability = "away"
+            elif self.repository.pending_activity(actor["id"]) is not None:
+                availability = "travelling"
+            else:
+                availability = "here"
+                aftermath = bool(self.repository.player_consequences())
+                question = "what now" if aftermath else "what is your priority"
+                conversation_options.append({
+                    "command": f"ask {actor['name']} {question}",
+                    "label": "Ask about the outcome · 1 min" if aftermath else "Ask about priorities · 1 min",
+                    "consequential": False,
+                })
+                for action in self.repository.available_npc_actions(actor["id"]):
+                    topic = action.get("discussion_topic")
+                    if action["id"] in public_actions and safe(topic):
+                        conversation_options.append({
+                            "command": f"ask {actor['name']} about {topic}",
+                            "label": f"Discuss {topic} · 1 min", "consequential": False,
+                        })
             profiles.append({
                 "id": actor["id"], "name": actor["name"],
                 "is_player": actor["kind"] == "player", "portrait": portrait,
+                "availability": availability, "conversation_options": conversation_options,
                 "role": role if safe(role) else "",
                 "attributes": {key: personality[key] for key in traits if safe(personality.get(key))},
                 "motivations": [text for text in identity.get("motivations", []) if safe(text)],

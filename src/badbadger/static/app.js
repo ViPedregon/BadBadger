@@ -160,6 +160,29 @@ function renderCharacters() {
   }
   const body = create("div", "", "character-body");
   body.append(create("p", character.is_player ? "YOUR CHARACTER" : "COMPANION", "eyebrow"), create("h3", character.name), create("p", character.role, "character-role"));
+  if (!character.is_player) {
+    const availability = {
+      here: "Here · ready to talk",
+      away: "Elsewhere · speak when you are together",
+      travelling: "Travelling · speak after they arrive",
+      unavailable: "Unavailable for conversation",
+      ended: "Chapter complete · profiles remain available to inspect",
+    };
+    body.append(create("p", availability[character.availability] || "", "character-availability"));
+    if (character.conversation_options?.length) {
+      const actions = create("div", "", "controls character-conversations");
+      actions.setAttribute("aria-label", `Talk with ${character.name}`);
+      character.conversation_options.forEach(option => {
+        const button = create("button", option.label);
+        button.type = "button";
+        button.dataset.command = option.command;
+        button.dataset.consequential = "false";
+        button.disabled = input.disabled;
+        actions.append(button);
+      });
+      body.append(actions, create("p", "Choose a question, then Send to speak. Conversation spends 1 minute.", "character-conversation-hint"));
+    }
+  }
   const labels = key => key.replaceAll("_", " ").replace(/^./, letter => letter.toUpperCase());
   const attributes = create("dl", "", "character-attributes");
   Object.entries(character.attributes).forEach(([key, value]) => attributes.append(create("dt", labels(key)), create("dd", value)));

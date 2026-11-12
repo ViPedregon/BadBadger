@@ -112,6 +112,44 @@ class BlackbarrowTests(unittest.TestCase):
         self.assertIsNone(profiles["horace"]["portrait"])
         self.assertEqual(self.game.view()["revision"], 0)
 
+    def test_character_conversation_options_follow_presence_and_available_plans(self):
+        profiles = {p["id"]: p for p in self.game.view()["characters"]}
+        self.assertEqual(profiles["victor"]["conversation_options"], [])
+        self.assertEqual(profiles["matilda"]["availability"], "here")
+        options = profiles["matilda"]["conversation_options"]
+        self.assertTrue(all(not option["consequential"] for option in options))
+        self.assertIn("ask Matilda Ash about high track", [option["command"] for option in options])
+        self.assertNotIn("grain guard", str(profiles["horace"]["conversation_options"]))
+        self.command("go to High Track")
+        profiles = {p["id"]: p for p in self.game.view()["characters"]}
+        self.assertEqual(profiles["matilda"]["availability"], "here")
+        self.assertEqual(len(profiles["matilda"]["conversation_options"]), 1)
+        self.assertIn("priority", profiles["matilda"]["conversation_options"][0]["command"])
+
+    def test_character_cards_do_not_offer_conversation_with_busy_or_absent_companions(self):
+        with GameRepository(self.path) as repository:
+            repository.create_travel("matilda", "high_track", 3)
+            repository.connection.execute("UPDATE characters SET location_id='causeway' WHERE id='horace'")
+            repository.connection.commit()
+        profiles = {p["id"]: p for p in self.game.view()["characters"]}
+        self.assertEqual(profiles["matilda"]["availability"], "travelling")
+        self.assertEqual(profiles["horace"]["availability"], "away")
+        for actor in ("matilda", "horace"):
+            self.assertEqual(profiles[actor]["conversation_options"], [])
+            self.assertNotIn("location_id", profiles[actor])
+            self.assertNotIn("pending_activity", profiles[actor])
+
+    def test_character_conversation_changes_to_aftermath_and_stops_at_chapter_end(self):
+        self.command("Matilda, guide the high track")
+        profiles = {p["id"]: p for p in self.game.view()["characters"]}
+        self.assertEqual(profiles["matilda"]["conversation_options"][0]["command"], "ask Matilda Ash what now")
+        self.assertIn("grain guard", str(profiles["horace"]["conversation_options"]))
+        self.command("wait 6")
+        for profile in self.game.view()["characters"]:
+            self.assertEqual(profile["conversation_options"], [])
+            if not profile["is_player"]:
+                self.assertEqual(profile["availability"], "ended")
+
     def test_matilda_conditions_refusal_and_reconsideration_follow_beliefs(self):
         with GameRepository(self.path) as repository:
             repository.connection.execute(
