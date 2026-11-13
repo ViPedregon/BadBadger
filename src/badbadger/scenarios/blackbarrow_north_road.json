@@ -244,6 +244,12 @@
           "predicate": "carries_medical_supplies",
           "value": true,
           "confidence": 1.0
+        },
+        {
+          "subject_id": "holding",
+          "predicate": "delays_supplies",
+          "value": true,
+          "confidence": 1.0
         }
       ]
     },
@@ -848,7 +854,7 @@
         "order_response": {
           "accept_score": 1.0,
           "refuse_below": 0.3,
-          "condition_message": "I need to understand the danger to these wagons before committing household guards. Let us examine the convoy petition.",
+          "condition_message": "Before I commit household guards, I need a clear account of what remains waiting and why it matters. Let us examine the convoy petition.",
           "refusal_message": "I cannot justify committing household guards to those wagons with what I currently believe."
         },
         "decision": {

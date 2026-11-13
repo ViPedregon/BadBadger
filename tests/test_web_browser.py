@@ -174,6 +174,31 @@ class BrowserTests(unittest.TestCase):
         expect(card.get_by_role("button", name="Discuss high track · 1 min")).to_have_count(0)
         expect(card.get_by_role("button", name="Ask about priorities · 1 min")).to_be_visible()
 
+    def test_guard_condition_can_be_resolved_by_the_suggested_examination(self):
+        from badbadger.db.repository import GameRepository
+        self.page.locator("#chapter-selection").select_option("blackbarrow")
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#new-game").click()
+        expect(self.page.locator("#notice")).to_have_text("New game started. Your previous playthrough is archived.")
+        self.command("Matilda, guide the high track")
+        # Seed uncertainty once; reconsideration then uses only player commands.
+        with GameRepository(self.save) as repository:
+            repository.connection.execute(
+                "UPDATE beliefs SET confidence=0.4 WHERE character_id='horace' AND subject_id='holding' AND predicate='delays_supplies'"
+            )
+            repository.connection.commit()
+        self.command("Horace, arrange a guard")
+        expect(self.page.locator("#transcript")).to_contain_text("Let us examine the convoy petition")
+        with GameRepository(self.save) as repository:
+            self.assertFalse(repository.get_fact("convoy", "guards_committed"))
+        self.command("examine convoy petition")
+        self.page.reload()
+        expect(self.page.locator("#command")).to_be_enabled()
+        self.command("Horace, arrange a guard")
+        expect(self.page.locator("#transcript")).to_contain_text("grain is guarded, not delivered")
+        with GameRepository(self.save) as repository:
+            self.assertTrue(repository.get_fact("convoy", "grain_guarded"))
+
     def test_guidance_fills_commands_without_spending_time(self):
         expect(self.page.locator("#objective")).to_contain_text("Question the crew")
         self.page.get_by_text("How mission time works", exact=True).click()

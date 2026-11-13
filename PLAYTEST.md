@@ -1,10 +1,38 @@
-# Relay Crisis playtest
+# BadBadger playtest
 
 The opening Gravenholt beta chapter is now **Blackbarrow: The North Road**;
 its scope, branch costs and automated coverage are in [BLACKBARROW.md](BLACKBARROW.md).
 The procedure below remains useful for the Relay Crisis prototype. Neither
 chapter's automated coverage replaces eventual external playtesting, but users
 do not need to manually recheck every implementation checkpoint.
+
+## Blackbarrow companion loop
+
+Start a new Blackbarrow game to load the current scenario snapshot. Inspect the
+Characters section, select each companion, and use a discussion button. Choosing
+the question must only fill the input; Send spends one minute. Confirm that the
+companion explains benefits and costs without committing the plan. Inspecting
+profiles and switching characters must leave mission time unchanged.
+
+Across separate playthroughs, try the controlled crossing, the high track with
+the optional grain guard, and holding the convoy. Check that the recap describes
+each plan's actual cost and that aftermath questions make sense. After the
+chapter ends, character inspection should remain available while conversation
+buttons disappear. Portrait initials are expected until artwork is supplied.
+
+The initial companions already have enough confidence to accept viable plans;
+inspection is not a mandatory unlock. Automated reconsideration checks seed
+uncertainty once, then use ordinary commands to resolve it: Matilda inspects the
+ridge markers, and Horace examines the convoy petition. No further direct state
+changes are used to secure acceptance. Reopening the save must preserve the
+evidence, and examination alone must not commit a plan or spend guards.
+
+Development playthroughs found that Horace's petition examination originally
+did not supply the evidence requested by his conditional guard response. The
+petition now records direct evidence that holding delays supplies, allowing the
+guard request to be reconsidered. Browser coverage repeats this path across a
+reload. These are local deterministic checks, not external tester feedback or
+validation of live AI dialogue quality.
 
 This build is ready for a short external playtest. The goal is to discover
 where a new player becomes confused, not to teach them the intended solution.

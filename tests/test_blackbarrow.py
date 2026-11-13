@@ -170,10 +170,9 @@ class BlackbarrowTests(unittest.TestCase):
         self.assertIn("cannot justify", " ".join(result["messages"]))
         with GameRepository(self.path) as repository:
             self.assertFalse(repository.get_fact("chapter", "resolved"))
-            repository.connection.execute(
-                "UPDATE beliefs SET value_json='true', confidence=1.0 WHERE character_id='matilda' AND subject_id='high_track' AND predicate='passable_on_foot'"
-            )
-            repository.connection.commit()
+        self.command("go to High Track")
+        self.command("examine ridge markers")
+        self.command("go to Gatehouse")
         self.game = RelayService(self.path)
         self.command("Matilda, guide the high track")
         with GameRepository(self.path) as repository:
@@ -190,10 +189,17 @@ class BlackbarrowTests(unittest.TestCase):
         self.assertIn("examine the convoy petition", " ".join(result["messages"]))
         with GameRepository(self.path) as repository:
             self.assertFalse(repository.get_fact("convoy", "guards_committed"))
-            repository.connection.execute(
-                "UPDATE beliefs SET confidence=1.0 WHERE character_id='horace' AND subject_id='holding' AND predicate='delays_supplies'"
-            )
-            repository.connection.commit()
+        self.command("examine convoy petition")
+        with GameRepository(self.path) as repository:
+            belief = next(item for item in repository.beliefs_for("horace")
+                          if item["subject_id"] == "holding" and item["predicate"] == "delays_supplies")
+            self.assertEqual(belief["confidence"], 1.0)
+            self.assertEqual(belief["evidence"][-1]["source_type"], "direct")
+            self.assertEqual(repository.player_order_response("horace", "guard_grain")["status"], "accept")
+            self.assertFalse(repository.get_fact("convoy", "guards_committed"))
+        self.game = RelayService(self.path)
+        discussion = self.command("ask Horace about grain guard")
+        self.assertIn("would post that guard", " ".join(discussion["messages"]))
         self.command("Horace, arrange a guard")
         with GameRepository(self.path) as repository:
             self.assertTrue(repository.get_fact("convoy", "grain_guarded"))

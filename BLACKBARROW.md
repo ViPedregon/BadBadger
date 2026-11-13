@@ -132,6 +132,14 @@ The real-browser test starts in Relay Crisis, selects Blackbarrow, investigates,
 closes/reopens the browser, restarts the server, resumes, and completes the chapter.
 Private future continuity and dossier notes are checked against player-facing output.
 
+Conditional orders are also checked through actual investigation and resume:
+ridge-marker inspection can resolve Matilda's uncertainty about safe footing,
+and the convoy petition gives Horace direct evidence that holding delays
+supplies. This lets him reconsider a conditional grain-guard request without
+requiring a developer to change his beliefs. The requested order remains a
+separate step after inspection. New games load these observation changes;
+existing saves preserve their authored scenario snapshots.
+
 Offline play is deterministic and complete. AI-mode plumbing remains covered with
 simulated structured provider responses. These tests do not establish the quality
 of every live-generated conversation, configure off-site backups, create tester
